@@ -14,13 +14,10 @@ import (
     //"os/signal"
     //"syscall"
     //"mob/client/music"
+    //"github.com/tcolgate/mp3"
 )
 
 func main() {
-    // Setup music
-    // music.Init()
-    // defer music.Quit()
-    
     fmt.Println("Starting client ...")
     conn, err := net.Dial("tcp", os.Args[1])
     if err != nil {
@@ -28,17 +25,50 @@ func main() {
     }
 
     enc := gob.NewEncoder(conn) // Will write to network.
-    //dec := gob.NewDecoder(conn) // Will read from network.
+    dec := gob.NewDecoder(conn) // Will read from network.
 
     // Encode (send) some values.
-    enc.Encode(proto.Client_Init_Packet{"blah", getSongNames()})
+    enc.Encode(proto.Client_Init_Packet{getSongNames()})
 
-    //fmt.Fprintf(conn, getSongNames() + "\n")
-    //conn.Write(init_packet)
+    for {
+        var frame_packet proto.Mp3_Frame_Packet
 
-    // Play song
-    // music.Play("../songs/east-asian.mp3")
+        dec.Decode(&frame_packet)
+
+        fmt.Println(frame_packet.Seqnum)
+        fmt.Println(frame_packet.Mp3_frame.Size())
+    }
+
+
+    // Shell commands:
+    // list
+    // play
+    // exit
+    // join
+
+    //for {
+        // get stdin input
+        // switch on string
+    //    break
+    //}
 }
+
+/*
+func handleJoin() {
+
+}
+
+func handleList() {
+
+}
+
+func handlePlay() {
+
+}
+
+func handleExit() {
+
+}*/
 
 // Returns csv of all song names in the songs folder.
 func getSongNames() string {
