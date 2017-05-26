@@ -4,10 +4,20 @@ import (
     "os"
     "fmt"
     "net"
-    "bufio"
+    //"bufio"
+    "strings"
+    "mob/proto"
+    "encoding/gob"
 )
 
+// global map of peers and their songs
+var peer_map map[string][]string
+
+// IP -> array of songs
+
 func main() {
+    peer_map = make(map[string][]string)
+    
     ln, err := net.Listen("tcp", ":" + os.Args[1])
     if err != nil {
     	// handle error
@@ -28,7 +38,17 @@ func main() {
 func handleConnection(conn net.Conn) {
     fmt.Println("Accepted new client!")
 
-    message, _ := bufio.NewReader(conn).ReadString('\n')
-    // output message received
-    fmt.Print("Message Received:", string(message))
+    var init_packet proto.Client_Init_Packet
+
+    //enc := gob.NewEncoder(conn) // Will write to network.
+    dec := gob.NewDecoder(conn) // Will read from network.
+
+    dec.Decode(&init_packet)
+
+
+
+    // Add client to our map
+    peer_map[init_packet.IP_Addr] = strings.Split(init_packet.Songs, ";")
+
+    fmt.Println(peer_map[init_packet.IP_Addr])
 }
