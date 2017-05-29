@@ -11,6 +11,9 @@ import (
     "encoding/gob"
     "net"
     "mob/proto"
+    "github.com/mikioh/tcp"
+    "github.com/mikioh/tcpinfo"
+    "time"
     //"os/signal"
     //"syscall"
     //"mob/client/music"
@@ -36,7 +39,7 @@ func main() {
         dec.Decode(&frame_packet)
 
         fmt.Println(frame_packet.Seqnum)
-        fmt.Println(frame_packet.Mp3_frame.Size())
+        //fmt.Println(frame_packet.Mp3_frame.Size())
     }
 
 
@@ -88,4 +91,31 @@ func getSongNames() string {
     })
 
     return buffer.String()
+}
+
+// get RTT in terms of milliseconds between current node and specified IP
+func getRTTBetweenNodes(address string) float32 {
+    c, err := net.Dial("tcp", address)
+
+    if err != nil {
+	       // error handling
+    }
+    defer c.Close()
+
+    tc, err := tcp.NewConn(c)
+    if err != nil {
+    	// error handling
+    }
+    var o tcpinfo.Info
+    var b [256]byte
+    i, err := tc.Option(o.Level(), o.Name(), b[:])
+    if err != nil {
+    	// error handling
+    }
+    txt, err := json.Marshal(i)
+    if err != nil {
+    	// error handling
+    }
+
+    return (time.Seconds(txt.rtt) / 1000)
 }
