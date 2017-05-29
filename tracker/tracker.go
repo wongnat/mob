@@ -3,9 +3,10 @@ package main
 import (
     "os"
     "fmt"
+    "log"
     "net"
-    //"bufio"
     "strings"
+    "io/ioutil"
     "mob/proto"
     "encoding/gob"
     "github.com/tcolgate/mp3"
@@ -52,13 +53,10 @@ func handleConnection(conn net.Conn) {
 
     // TODO: Remove this part later
     // Stream an mp3 to client
-
-
-
     skipped := 0
     var counter uint64
     counter = 0
-    r, err := os.Open("../songs/east-asian.mp3")
+    r, err := os.Open("../songs/The-entertainer-piano.mp3")
     if err != nil {
         fmt.Println(err)
         return
@@ -73,18 +71,22 @@ func handleConnection(conn net.Conn) {
             break
         }
 
+        byte_reader := f.Reader()
+        frame_bytes, e := ioutil.ReadAll(byte_reader)
+        if e != nil {
+            log.Println(err)
+        }
+
         var frame_packet proto.Mp3_Frame_Packet
-        //frame_packet.Seqnum = counter
-        //frame_packet.Mp3_frame = f
+        frame_packet.Seqnum = counter
+        frame_packet.Mp3_frame = frame_bytes
 
         err := enc.Encode(frame_packet)
         if err != nil {
             //fmt.Println(err)
         }
-        counter += 1
 
-        //fmt.Println(counter)
-        //fmt.Println(f.Size())
-        fmt.Println(f.String())
+        counter += 1
+        fmt.Println(counter)
     }
 }
