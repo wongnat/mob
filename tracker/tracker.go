@@ -16,7 +16,7 @@ import (
 // IP -> array of songs
 var peer_map map[string][]string
 
-// slice of IP
+// slice of IPs
 var peers []string
 
 //var song_queue
@@ -103,7 +103,7 @@ func handleConnection(conn net.Conn) {
 // tracker regularly sends host info to all nodes in order to inform them of the current network
 func updateInformation(conn net.Conn) {
     enc := gob.NewEncoder(conn) // Will write to network.
-    
+
     var err error
 
     for err == nil {

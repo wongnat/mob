@@ -2,6 +2,7 @@ package main
 
 import (
     "os"
+    "bufio"
     "fmt"
     "log"
     "bytes"
@@ -14,39 +15,33 @@ import (
     //"github.com/tcolgate/mp3"
 )
 
+var peers []string
+
 func main() {
     music.Init() // initialize SDL audio
     defer music.Quit()
 
     fmt.Println("mob client ...")
 
-    fmt.Println(proto.GetRTTBetweenNodes(os.Args[1]))
-
-    conn, err := net.Dial("tcp", os.Args[1])
-    if err != nil {
-        // handle error
-    }
-
-    // Interface to tracker node
-    enc := gob.NewEncoder(conn) // Will write to tracker
-    dec := gob.NewDecoder(conn) // Will read from tracker
-
-    // Send list of songs to tracker
-    enc.Encode(proto.Client_Init_Packet{getSongNames()})
+    reader := bufio.NewReader(os.Stdin)
 
     for {
-        var frame_packet *proto.Mp3_Frame_Packet = new(proto.Mp3_Frame_Packet)
+        fmt.Println("Commands: join, list, play, exit")
+        input, _ := reader.ReadString('\n')
 
-        dec.Decode(frame_packet)
+        input = strings.Replace(input, "\n", "", -1)
 
-        break
-
-
-        //fmt.Println(frame_packet.Mp3_frame)
-        // music.PlayBuffer(&frame_packet.Mp3_frame)
+        if strings.Compare("join", input) == 0 {
+            handleJoin()
+        } else if strings.Compare("list", input) == 0 {
+            handleList()
+        } else if strings.Compare("play", input) == 0 {
+            handlePlay()
+        } else {
+            handleExit()
+            break
+        }
     }
-
-
     // Shell commands:
     // list
     // play
@@ -60,9 +55,20 @@ func main() {
     //}
 }
 
-/*
-func handleJoin() {
 
+func handleJoin() {
+    conn, err := net.Dial("tcp", os.Args[1])
+    if err != nil {
+        // handle error
+    }
+
+    // Interface to tracker node
+    enc := gob.NewEncoder(conn) // Will write to tracker
+
+    // Send list of songs to tracker
+    enc.Encode(proto.Client_Init_Packet{getSongNames()})
+
+    go receiveNearestNodes(conn)
 }
 
 func handleList() {
@@ -75,7 +81,7 @@ func handlePlay() {
 
 func handleExit() {
 
-}*/
+}
 
 // Returns csv of all song names in the songs folder.
 func getSongNames() string {
@@ -95,4 +101,18 @@ func getSongNames() string {
     })
 
     return buffer.String()
+}
+
+func receiveNearestNodes(conn net.Conn) {
+    dec := gob.NewDecoder(conn) // Will read from tracker
+
+    var info *proto.Node_Info = new(proto.Node_Info)
+
+    var err error
+
+    for err == nil {
+        err = dec.Decode(info)
+
+        peers = info.Nodes
+    }
 }
