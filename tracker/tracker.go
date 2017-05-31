@@ -10,13 +10,19 @@ import (
     "mob/proto"
     "encoding/gob"
     "github.com/tcolgate/mp3"
+    "time"
 )
 
 // IP -> array of songs
 var peer_map map[string][]string
+
+// slice of IP
+var peers []string
+
 //var song_queue
 func main() {
     peer_map = make(map[string][]string)
+    peers = make([]string, 0)
 
     ln, err := net.Listen("tcp", ":" + os.Args[1])
     if err != nil {
@@ -45,8 +51,11 @@ func handleConnection(conn net.Conn) {
 
     dec.Decode(&init_packet)
 
-    // Add client to our map
+    // Add client to our map and slice
+    peers = append(peers, conn.RemoteAddr().String())
     peer_map[conn.RemoteAddr().String()] = strings.Split(init_packet.Songs, ";")
+
+    go updateInformation(conn)
 
     // TODO: Listen for client commands
 
@@ -88,5 +97,17 @@ func handleConnection(conn net.Conn) {
 
         counter += 1
         //fmt.Println(counter)
+    }
+}
+
+// tracker regularly sends host info to all nodes in order to inform them of the current network
+func updateInformation(conn net.Conn) {
+    enc := gob.NewEncoder(conn) // Will write to network.
+    
+    var err error
+
+    for err == nil {
+        err = enc.Encode(proto.Node_Info{peers})
+        time.Sleep(1 * time.Second)
     }
 }

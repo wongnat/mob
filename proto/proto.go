@@ -14,6 +14,10 @@ type Mp3_Frame_Packet struct {
     Mp3_frame []byte
 }
 
+type Node_Info struct {
+    Nodes []string
+}
+
 // More packet types:
 
 

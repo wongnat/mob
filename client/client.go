@@ -7,8 +7,8 @@ import (
     "bytes"
     "strings"
     "path/filepath"
-    //"encoding/gob"
-    //"net"
+    "encoding/gob"
+    "net"
     "mob/proto"
     "mob/client/music"
     //"github.com/tcolgate/mp3"
@@ -22,27 +22,29 @@ func main() {
 
     fmt.Println(proto.GetRTTBetweenNodes(os.Args[1]))
 
-    // conn, err := net.Dial("tcp", os.Args[1])
-    // if err != nil {
-    //     // handle error
-    // }
-    //
-    // // Interface to tracker node
-    // enc := gob.NewEncoder(conn) // Will write to tracker
-    // dec := gob.NewDecoder(conn) // Will read from tracker
-    //
-    // // Send list of songs to tracker
-    // enc.Encode(proto.Client_Init_Packet{getSongNames()})
-    //
-    // for {
-    //     var frame_packet *proto.Mp3_Frame_Packet = new(proto.Mp3_Frame_Packet)
-    //
-    //     dec.Decode(frame_packet)
-    //
-    //
-    //     //fmt.Println(frame_packet.Mp3_frame)
-    //     // music.PlayBuffer(&frame_packet.Mp3_frame)
-    // }
+    conn, err := net.Dial("tcp", os.Args[1])
+    if err != nil {
+        // handle error
+    }
+
+    // Interface to tracker node
+    enc := gob.NewEncoder(conn) // Will write to tracker
+    dec := gob.NewDecoder(conn) // Will read from tracker
+
+    // Send list of songs to tracker
+    enc.Encode(proto.Client_Init_Packet{getSongNames()})
+
+    for {
+        var frame_packet *proto.Mp3_Frame_Packet = new(proto.Mp3_Frame_Packet)
+
+        dec.Decode(frame_packet)
+
+        break
+
+
+        //fmt.Println(frame_packet.Mp3_frame)
+        // music.PlayBuffer(&frame_packet.Mp3_frame)
+    }
 
 
     // Shell commands:
