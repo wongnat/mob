@@ -87,6 +87,6 @@ func handleConnection(conn net.Conn) {
         }
 
         counter += 1
-        fmt.Println(counter)
+        //fmt.Println(counter)
     }
 }
