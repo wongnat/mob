@@ -19,6 +19,9 @@ var peers []string
 
 var conn net.Conn
 var cmdConn net.Conn
+var cmdEnc *gob.Encoder
+var cmdDec *gob.Decoder
+var ln net.Listener
 
 // Assume mp3 is no larger than 50MB
 // We reuse this buffer for each song we play
@@ -76,9 +79,13 @@ func main() {
 
 
 func handleJoin(input string) {
-    ln, err := net.Listen("tcp", ":6123")
-    if err != nil {
-    	log.Println(err)
+    var err error
+
+    if ln == nil {
+        ln, err = net.Listen("tcp", ":6123")
+        if err != nil {
+        	log.Println(err)
+        }
     }
 
     conn, err = net.Dial("tcp", input)
@@ -94,6 +101,9 @@ func handleJoin(input string) {
     enc := gob.NewEncoder(conn)
     enc.Encode(proto.ClientInitPacket{getSongNames()})
 
+    cmdEnc = gob.NewEncoder(cmdConn)
+    cmdDec = gob.NewDecoder(cmdConn)
+
     //receiveNearestNodes()
 }
 
@@ -102,14 +112,11 @@ func handleLeave() {
         fmt.Println("Error: not connected to a tracker")
     }
 
-    enc := gob.NewEncoder(cmdConn)
-    //dec := gob.NewDecoder(cmdConn)
+    var res proto.TrackerResPacket
+    cmdEnc.Encode(proto.ClientCmdPacket{"leave", ""})
+    cmdDec.Decode(&res)
 
-    //var res proto.TrackerResPacket
-    enc.Encode(proto.ClientCmdPacket{"leave", ""})
-    //dec.Decode(&res)
-
-    //fmt.Println(res.Res)
+    fmt.Println(res.Res)
 
     conn.Close()
     cmdConn.Close()
@@ -120,12 +127,18 @@ func handleList() {
         fmt.Println("Error: not connected to a tracker")
     }
 
-    enc := gob.NewEncoder(cmdConn)
-    dec := gob.NewDecoder(cmdConn)
-
     var res proto.TrackerSongsPacket
-    enc.Encode(proto.ClientCmdPacket{"list", ""})
-    dec.Decode(&res)
+    err := cmdEnc.Encode(proto.ClientCmdPacket{"list", ""})
+    if err != nil {
+        fmt.Println("encode error")
+        log.Println(err)
+    }
+
+    err = cmdDec.Decode(&res)
+    if err != nil {
+        fmt.Println("decode error")
+        log.Println(err)
+    }
 
     fmt.Println(res.Res)
 }
@@ -135,12 +148,9 @@ func handlePlay(input string) {
         fmt.Println("Error: not connected to a tracker")
     }
 
-    enc := gob.NewEncoder(cmdConn)
-    dec := gob.NewDecoder(cmdConn)
-
     var res proto.TrackerResPacket
-    enc.Encode(proto.ClientCmdPacket{"play", input})
-    dec.Decode(&res)
+    cmdEnc.Encode(proto.ClientCmdPacket{"play", input})
+    cmdDec.Decode(&res)
 
     fmt.Println(res.Res)
 }

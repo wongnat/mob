@@ -13,6 +13,8 @@ import (
     //"time"
 )
 
+var counter int64
+
 type peerInfo struct {
     Conn net.Conn
     Songs []string
@@ -26,6 +28,7 @@ var songQueue []string
 func main() {
     peerMap   = make(map[string]peerInfo)
     songQueue = make([]string, 0)
+    counter = 0
 
     ln, err := net.Listen("tcp", ":" + os.Args[1])
     if err != nil {
@@ -52,11 +55,8 @@ func handleConnection(conn net.Conn) {
     // TODO: Listen for client commands
     cmdConn, err := net.Dial("tcp", clientAddr + ":6123")
     if err != nil {
-        log.Println(err)
+        fmt.Println("Error in listening for client commands")
     }
-
-    //conn.SetKeepAlive(false)
-    //cmdConn.SetKeepAlive(false)
 
     cmdEnc := gob.NewEncoder(cmdConn) // Will write to network.
     cmdDec := gob.NewDecoder(cmdConn) // Will read from network.
@@ -77,14 +77,17 @@ func handleConnection(conn net.Conn) {
         var cmd proto.ClientCmdPacket
         err := cmdDec.Decode(&cmd)
         if err != nil {
-            log.Println(err)
+            if counter < 5 {
+                log.Println(err)
+                counter++
+            }
         }
 
         switch cmd.Cmd {
         case "leave":
             delete(peerMap, clientAddr)
             updateInformation()
-            //cmdEnc.Encode(proto.TrackerResPacket{"Received goodbye from " + conn.LocalAddr().String()})
+            cmdEnc.Encode(proto.TrackerResPacket{"Received goodbye from " + conn.LocalAddr().String()})
             cmdConn.Close()
             conn.Close()
             return
