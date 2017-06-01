@@ -25,10 +25,13 @@ var peerMap map[string]peerInfo
 
 var songQueue []string
 
+var playing bool
+
 func main() {
     peerMap   = make(map[string]peerInfo)
     songQueue = make([]string, 0)
     counter = 0
+    playing = false
 
     ln, err := net.Listen("tcp", ":" + os.Args[1])
     if err != nil {
@@ -85,6 +88,15 @@ func handleConnection(conn net.Conn) {
 
         switch cmd.Cmd {
         case "leave":
+            // remove songQueue song provided from host that is leaving
+            for i := 1; i < len(songQueue); i++ {
+                for _, song := range peerMap[clientAddr].Songs {
+                    if songQueue[i] == strings.ToLower(song) {
+                        songQueue = append(songQueue[:i], songQueue[i+1:]...)
+                    }
+                }
+            }
+
             delete(peerMap, clientAddr)
             updateInformation()
             cmdEnc.Encode(proto.TrackerResPacket{"Received goodbye from " + conn.LocalAddr().String()})
@@ -94,8 +106,19 @@ func handleConnection(conn net.Conn) {
         case "list":
             cmdEnc.Encode(proto.TrackerSongsPacket{getSongList()})
         case "play":
-            songQueue = append(songQueue, cmd.Arg)
-            cmdEnc.Encode(proto.TrackerResPacket{cmd.Arg + " was successfully queued."})
+            found := false
+            for _, song := range getSongList() {
+                if cmd.Arg == strings.ToLower(song) {
+                    songQueue = append(songQueue, cmd.Arg)
+                    cmdEnc.Encode(proto.TrackerResPacket{cmd.Arg + " was successfully queued."})
+                    found = true
+                    break
+                }
+            }
+
+            if !found {
+                cmdEnc.Encode(proto.TrackerResPacket{cmd.Arg + " is not a valid song."})
+            }
         }
     }
 }

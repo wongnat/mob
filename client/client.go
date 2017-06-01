@@ -148,6 +148,7 @@ func handleList() {
     fmt.Println(res.Res)
 }
 
+// need to listen for when to start playing to others
 func handlePlay(input string) {
     if cmdConn == nil {
         fmt.Println("Error: not connected to a tracker")
@@ -156,6 +157,10 @@ func handlePlay(input string) {
     var res proto.TrackerResPacket
     cmdEnc.Encode(proto.ClientCmdPacket{"play", input})
     cmdDec.Decode(&res)
+
+    if res.Res == "start" {
+        seedToPeers()
+    }
 
     fmt.Println(res.Res)
 }
@@ -172,7 +177,8 @@ func handleHelp() {
 
 // udp handshake receive on port 6121
 // udp song receive on port 6122
-func seedToPeers(ipAddrs []string) {
+func seedToPeers() {
+    fmt.Println("starting to seed to peers")
     // check if we have the song locally
         // if so, then open the file
         // else wait for songBuf to be populated
