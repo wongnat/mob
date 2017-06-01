@@ -6,23 +6,26 @@ import (
     "log"
     "net"
     "strings"
-    "io/ioutil"
+    //"io/ioutil"
     "mob/proto"
     "encoding/gob"
-    "github.com/tcolgate/mp3"
-    "time"
+    //"github.com/tcolgate/mp3"
+    //"time"
 )
 
+type peerInfo struct {
+    Conn net.Conn
+    Songs []string
+}
+
 // IP -> array of songs
-var peer_map map[string][]string
+var peerMap map[string]peerInfo
 
-// slice of IPs
-var peers []string
+var songQueue []string
 
-//var song_queue
 func main() {
-    peer_map = make(map[string][]string)
-    peers = make([]string, 0)
+    peerMap   = make(map[string]peerInfo)
+    songQueue = make([]string, 0)
 
     ln, err := net.Listen("tcp", ":" + os.Args[1])
     if err != nil {
@@ -34,7 +37,7 @@ func main() {
     for {
     	conn, err := ln.Accept()
     	if err != nil {
-    		// handle error
+    		log.Println(err)
     	}
 
     	go handleConnection(conn)
@@ -42,72 +45,81 @@ func main() {
 }
 
 func handleConnection(conn net.Conn) {
-    fmt.Println("Accepted new client!")
-
-    var init_packet proto.Client_Init_Packet
-
-    enc := gob.NewEncoder(conn) // Will write to network.
-    dec := gob.NewDecoder(conn) // Will read from network.
-
-    dec.Decode(&init_packet)
-
-    // Add client to our map and slice
-    peers = append(peers, conn.RemoteAddr().String())
-    peer_map[conn.RemoteAddr().String()] = strings.Split(init_packet.Songs, ";")
-
-    go updateInformation(conn)
+    fmt.Println("Accepted new client!") // TODO: add time stamp
+    clientAddr := conn.RemoteAddr().String()
+    clientAddr = strings.Split(clientAddr, ":")[0]
 
     // TODO: Listen for client commands
-
-
-    // TODO: Remove this part later
-    // Stream an mp3 to client
-    skipped := 0
-    var counter uint64
-    counter = 0
-    r, err := os.Open("../songs/The-entertainer-piano.mp3")
+    cmdConn, err := net.Dial("tcp", clientAddr + ":6123")
     if err != nil {
-        fmt.Println(err)
-        return
+        log.Println(err)
     }
 
-    d := mp3.NewDecoder(r)
-    var f mp3.Frame
-    for {
+    //conn.SetKeepAlive(false)
+    //cmdConn.SetKeepAlive(false)
 
-        if err := d.Decode(&f, &skipped); err != nil {
-            fmt.Println(err)
-            break
-        }
+    cmdEnc := gob.NewEncoder(cmdConn) // Will write to network.
+    cmdDec := gob.NewDecoder(cmdConn) // Will read from network.
 
-        byte_reader := f.Reader()
-        frame_bytes, e := ioutil.ReadAll(byte_reader)
-        if e != nil {
+    var initPacket proto.ClientInitPacket
+
+    dec := gob.NewDecoder(conn) // Will read from network.
+    dec.Decode(&initPacket)
+
+    // Add client to our map and slice
+
+    info := peerInfo{conn, strings.Split(initPacket.Songs, ";")}
+    peerMap[clientAddr] = info
+
+    updateInformation()
+
+    for { // handle commands
+        var cmd proto.ClientCmdPacket
+        err := cmdDec.Decode(&cmd)
+        if err != nil {
             log.Println(err)
         }
 
-        var frame_packet proto.Mp3_Frame_Packet
-        frame_packet.Seqnum = counter
-        frame_packet.Mp3_frame = frame_bytes
-
-        err := enc.Encode(frame_packet)
-        if err != nil {
-            //fmt.Println(err)
+        switch cmd.Cmd {
+        case "leave":
+            delete(peerMap, clientAddr)
+            updateInformation()
+            //cmdEnc.Encode(proto.TrackerResPacket{"Received goodbye from " + conn.LocalAddr().String()})
+            cmdConn.Close()
+            conn.Close()
+            return
+        case "list":
+            cmdEnc.Encode(proto.TrackerSongsPacket{getSongList()})
+        case "play":
+            songQueue = append(songQueue, cmd.Arg)
+            cmdEnc.Encode(proto.TrackerResPacket{cmd.Arg + " was successfully queued."})
         }
-
-        counter += 1
-        //fmt.Println(counter)
     }
 }
 
-// tracker regularly sends host info to all nodes in order to inform them of the current network
-func updateInformation(conn net.Conn) {
-    enc := gob.NewEncoder(conn) // Will write to network.
-
-    var err error
-
-    for err == nil {
-        err = enc.Encode(proto.Node_Info{peers})
-        time.Sleep(1 * time.Second)
+func updateInformation() {
+    keys := make([]string, 0, len(peerMap))
+    for k := range peerMap {
+        keys = append(keys, k)
     }
+
+    for i := 0; i < len(keys); i++ {
+        enc := gob.NewEncoder(peerMap[keys[i]].Conn)
+        enc.Encode(proto.ClientInfoPacket{keys})
+    }
+}
+
+func getSongList() ([]string) {
+    var songs []string
+
+    keys := make([]string, 0, len(peerMap))
+    for k := range peerMap {
+        keys = append(keys, k)
+    }
+
+    for i := 0; i < len(keys); i++ {
+        songs = append(songs, peerMap[keys[i]].Songs...)
+    }
+
+    return songs
 }
