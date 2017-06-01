@@ -11,18 +11,33 @@ import (
     "encoding/gob"
     "net"
     "mob/proto"
-
     "mob/client/music"
-    //"github.com/tcolgate/mp3"
+    "github.com/tcolgate/mp3"
 )
 
 var peers []string
+
+// Assume mp3 is no larger than 50MB
+// We reuse this buffer for each song we play
+// Don't need to worry when it gets GCed since we're using it the whole time
+var songBuf [50 * 1024 * 1024]byte
 
 func main() {
     music.Init() // initialize SDL audio
     defer music.Quit()
 
     fmt.Println("mob client ...")
+
+    // Open the mp3 file
+    /*
+    r, err := os.Open("../songs/The-entertainer-piano.mp3")
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+
+    d := mp3.NewDecoder(r)
+    music.PlayFromSongBuf(d, &songBuf)*/
 
     reader := bufio.NewReader(os.Stdin)
 
@@ -44,6 +59,7 @@ func main() {
             break
         }
     }
+
     // Shell commands:
     // list
     // play
@@ -82,6 +98,19 @@ func handlePlay() {
 }
 
 func handleExit() {
+
+}
+
+func seedToPeers(ip_addrs []string) {
+    // check if we have the song locally
+        // if so, then open the file
+        // else wait for songBuf to be populated
+
+    // begin sending UDP packets with mp3 frames to peers
+
+    // delay
+
+    // start playing the song
 
 }
 
