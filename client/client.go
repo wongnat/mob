@@ -2,47 +2,48 @@ package main
 
 import (
     "os"
+    "bufio"
     "fmt"
     "log"
     "bytes"
     "strings"
     "path/filepath"
-    //"path"
     "encoding/gob"
     "net"
     "mob/proto"
-    "github.com/mikioh/tcp"
-    "github.com/mikioh/tcpinfo"
-    "time"
-    //"os/signal"
-    //"syscall"
-    //"mob/client/music"
+
+    "mob/client/music"
     //"github.com/tcolgate/mp3"
 )
 
+var peers []string
+
 func main() {
-    fmt.Println("Starting client ...")
-    conn, err := net.Dial("tcp", os.Args[1])
-    if err != nil {
-        // handle error
-    }
+    music.Init() // initialize SDL audio
+    defer music.Quit()
 
-    enc := gob.NewEncoder(conn) // Will write to network.
-    dec := gob.NewDecoder(conn) // Will read from network.
+    fmt.Println("mob client ...")
 
-    // Encode (send) some values.
-    enc.Encode(proto.Client_Init_Packet{getSongNames()})
+    reader := bufio.NewReader(os.Stdin)
 
     for {
-        var frame_packet proto.Mp3_Frame_Packet
 
-        dec.Decode(&frame_packet)
+        fmt.Println("Commands: join, list, play, exit")
+        input, _ := reader.ReadString('\n')
 
-        fmt.Println(frame_packet.Seqnum)
-        //fmt.Println(frame_packet.Mp3_frame.Size())
+        input = strings.Replace(input, "\n", "", -1)
+
+        if strings.Compare("join", input) == 0 {
+            handleJoin()
+        } else if strings.Compare("list", input) == 0 {
+            handleList()
+        } else if strings.Compare("play", input) == 0 {
+            handlePlay()
+        } else {
+            handleExit()
+            break
+        }
     }
-
-
     // Shell commands:
     // list
     // play
@@ -56,9 +57,20 @@ func main() {
     //}
 }
 
-/*
-func handleJoin() {
 
+func handleJoin() {
+    conn, err := net.Dial("tcp", os.Args[1])
+    if err != nil {
+        // handle error
+    }
+
+    // Interface to tracker node
+    enc := gob.NewEncoder(conn) // Will write to tracker
+
+    // Send list of songs to tracker
+    enc.Encode(proto.Client_Init_Packet{getSongNames()})
+
+    go receiveNearestNodes(conn)
 }
 
 func handleList() {
@@ -71,7 +83,7 @@ func handlePlay() {
 
 func handleExit() {
 
-}*/
+}
 
 // Returns csv of all song names in the songs folder.
 func getSongNames() string {
@@ -83,7 +95,7 @@ func getSongNames() string {
         }
 
         s := filepath.Base(p)
-        if strings.Compare(s, "songs") != 0 {
+        if strings.Compare(s, "songs") != 0 && strings.Contains(s, ".mp3") {
             buffer.WriteString(s + ";")
         }
 
@@ -93,29 +105,16 @@ func getSongNames() string {
     return buffer.String()
 }
 
-// get RTT in terms of milliseconds between current node and specified IP
-func getRTTBetweenNodes(address string) float32 {
-    c, err := net.Dial("tcp", address)
+func receiveNearestNodes(conn net.Conn) {
+    dec := gob.NewDecoder(conn) // Will read from tracker
 
-    if err != nil {
-	       // error handling
-    }
-    defer c.Close()
+    var info *proto.Node_Info = new(proto.Node_Info)
 
-    tc, err := tcp.NewConn(c)
-    if err != nil {
-    	// error handling
-    }
-    var o tcpinfo.Info
-    var b [256]byte
-    i, err := tc.Option(o.Level(), o.Name(), b[:])
-    if err != nil {
-    	// error handling
-    }
-    txt, err := json.Marshal(i)
-    if err != nil {
-    	// error handling
-    }
+    var err error
 
-    return (time.Seconds(txt.rtt) / 1000)
+    for err == nil {
+        err = dec.Decode(info)
+
+        peers = info.Nodes
+    }
 }

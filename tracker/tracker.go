@@ -3,19 +3,26 @@ package main
 import (
     "os"
     "fmt"
+    "log"
     "net"
-    //"bufio"
     "strings"
+    "io/ioutil"
     "mob/proto"
     "encoding/gob"
     "github.com/tcolgate/mp3"
+    "time"
 )
 
 // IP -> array of songs
 var peer_map map[string][]string
+
+// slice of IPs
+var peers []string
+
 //var song_queue
 func main() {
     peer_map = make(map[string][]string)
+    peers = make([]string, 0)
 
     ln, err := net.Listen("tcp", ":" + os.Args[1])
     if err != nil {
@@ -44,21 +51,21 @@ func handleConnection(conn net.Conn) {
 
     dec.Decode(&init_packet)
 
-    // Add client to our map
+    // Add client to our map and slice
+    peers = append(peers, conn.RemoteAddr().String())
     peer_map[conn.RemoteAddr().String()] = strings.Split(init_packet.Songs, ";")
+
+    go updateInformation(conn)
 
     // TODO: Listen for client commands
 
 
     // TODO: Remove this part later
     // Stream an mp3 to client
-
-
-
     skipped := 0
     var counter uint64
     counter = 0
-    r, err := os.Open("../songs/east-asian.mp3")
+    r, err := os.Open("../songs/The-entertainer-piano.mp3")
     if err != nil {
         fmt.Println(err)
         return
@@ -73,18 +80,34 @@ func handleConnection(conn net.Conn) {
             break
         }
 
+        byte_reader := f.Reader()
+        frame_bytes, e := ioutil.ReadAll(byte_reader)
+        if e != nil {
+            log.Println(err)
+        }
+
         var frame_packet proto.Mp3_Frame_Packet
-        //frame_packet.Seqnum = counter
-        //frame_packet.Mp3_frame = f
+        frame_packet.Seqnum = counter
+        frame_packet.Mp3_frame = frame_bytes
 
         err := enc.Encode(frame_packet)
         if err != nil {
             //fmt.Println(err)
         }
-        counter += 1
 
+        counter += 1
         //fmt.Println(counter)
-        //fmt.Println(f.Size())
-        fmt.Println(f.String())
+    }
+}
+
+// tracker regularly sends host info to all nodes in order to inform them of the current network
+func updateInformation(conn net.Conn) {
+    enc := gob.NewEncoder(conn) // Will write to network.
+
+    var err error
+
+    for err == nil {
+        err = enc.Encode(proto.Node_Info{peers})
+        time.Sleep(1 * time.Second)
     }
 }
