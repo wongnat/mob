@@ -22,6 +22,7 @@ var cmdConn net.Conn
 var cmdEnc *gob.Encoder
 var cmdDec *gob.Decoder
 var ln net.Listener
+var connected bool
 
 // Assume mp3 is no larger than 50MB
 // We reuse this buffer for each song we play
@@ -104,7 +105,9 @@ func handleJoin(input string) {
     cmdEnc = gob.NewEncoder(cmdConn)
     cmdDec = gob.NewDecoder(cmdConn)
 
-    //receiveNearestNodes()
+    connected = true
+
+    receiveNearestNodes()
 }
 
 func handleLeave() {
@@ -117,6 +120,8 @@ func handleLeave() {
     cmdDec.Decode(&res)
 
     fmt.Println(res.Res)
+
+    connected = false
 
     conn.Close()
     cmdConn.Close()
@@ -213,17 +218,18 @@ func getSongNames() string {
 }
 
 // Receive IP addresses of peers
-/*
 func receiveNearestNodes() {
     var info proto.ClientInfoPacket
     var err error
 
     dec := gob.NewDecoder(conn)
-    for {
+    for connected {
         err = dec.Decode(&info) // hope this blocks
         if err != nil {
-            log.Println(err)
+            // fmt.Println("In receiveNearestNodes")
+            // log.Println(err)
+            // hope no error because it ruins how our command line interface looks
         }
         peers = info.ClientIps
     }
-}*/
+}
