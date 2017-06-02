@@ -2,39 +2,40 @@ package main
 
 import (
     "os"
+    "os/signal"
+    "syscall"
     "bufio"
     "fmt"
     "log"
-    "bytes"
+    //"bytes"
     "strings"
     "path/filepath"
-    "encoding/gob"
     "net"
     "mob/proto"
     "mob/client/music"
-    //"github.com/tcolgate/mp3"
+    "github.com/tcolgate/mp3"
+    "github.com/cenkalti/rpc2"
 )
 
 var peers []string
 
 var conn net.Conn
-var cmdConn net.Conn
-var cmdEnc *gob.Encoder
-var cmdDec *gob.Decoder
-var ln net.Listener
-var connected bool
+var client *rpc2.Client
 
 // Assume mp3 is no larger than 50MB
 // We reuse this buffer for each song we play
 // Don't need to worry when it gets GCed since we're using it the whole time
 var songBuf [20 * 1024 * 1024]byte
 
+
+// TODO: when all clients in peerMap make rpc to say that they are done with the song
+// notify the next set of seeders to begin seeding
 func main() {
     c := make(chan os.Signal, 2)
     signal.Notify(c, os.Interrupt, syscall.SIGTERM)
     go func() {
         <-c
-        if cmdConn != nil {
+        if client != nil {
             handleLeave()
         }
         os.Exit(1)
@@ -53,6 +54,7 @@ func main() {
       \/           \/
 `)
 
+    fmt.Println()
     fmt.Println("internet radio version 0.0.0")
     reader := bufio.NewReader(os.Stdin)
 
@@ -67,7 +69,7 @@ func main() {
 
         switch strs[0] {
         case "join": // join 192.168.1.12:1234
-            go handleJoin(strs[1])
+            handleJoin(strs[1])
         case "leave": // leave the network
             handleLeave()
         case "list": // list
@@ -75,7 +77,7 @@ func main() {
         case "play": // play blah.mp3
             handlePlay(strs[1])
         case "quit": // quit the program
-            if cmdConn != nil {
+            if client != nil {
                 handleLeave()
             }
             return
@@ -88,95 +90,63 @@ func main() {
     }
 }
 
-
 func handleJoin(input string) {
-    var err error
-
-    if ln == nil {
-        ln, err = net.Listen("tcp", ":6123")
-        if err != nil {
-        	log.Println(err)
-        }
+    if client != nil {
+        handleLeave()
     }
+
+    var res proto.TrackerSlice
+    var err error
 
     conn, err = net.Dial("tcp", input)
     if err != nil {
         log.Println(err)
     }
 
-    cmdConn, err = ln.Accept()
-    if err != nil {
-        log.Println(err)
-    }
+    client = rpc2.NewClient(conn)
+    go client.Run()
 
-    enc := gob.NewEncoder(conn)
-    enc.Encode(proto.ClientInitPacket{getSongNames()})
-
-    cmdEnc = gob.NewEncoder(cmdConn)
-    cmdDec = gob.NewDecoder(cmdConn)
-
-    connected = true
-
-    receiveNearestNodes()
+    addr := strings.Split(conn.LocalAddr().String(), ":")[0]
+    client.Call("join", proto.ClientInfoMsg{addr, getSongNames()}, nil)
+    client.Call("peers", proto.ClientCmdMsg{""}, &res)
+    peers = res.Res
+    fmt.Println(peers)
 }
 
 func handleLeave() {
-    if cmdConn == nil {
+    if client == nil {
         fmt.Println("Error: not connected to a tracker")
+        return
     }
 
-    var res proto.TrackerResPacket
-    cmdEnc.Encode(proto.ClientCmdPacket{"leave", ""})
-    cmdDec.Decode(&res)
-
-    fmt.Println(res.Res)
-
-    connected = false
-
-    conn.Close()
-    cmdConn.Close()
+    client.Call("leave", proto.ClientInfoMsg{conn.LocalAddr().String(), nil}, nil)
 }
 
 func handleList() {
-    if cmdConn == nil {
+    if client == nil {
         fmt.Println("Error: not connected to a tracker")
+        return
     }
 
-    var res proto.TrackerSongsPacket
-    err := cmdEnc.Encode(proto.ClientCmdPacket{"list", ""})
-    if err != nil {
-        fmt.Println("encode error")
-        log.Println(err)
-    }
+    var res proto.TrackerSlice
 
-    err = cmdDec.Decode(&res)
-    if err != nil {
-        fmt.Println("decode error")
-        log.Println(err)
-    }
-
+    client.Call("list", proto.ClientCmdMsg{""}, &res)
     fmt.Println(res.Res)
 }
 
 // need to listen for when to start playing to others
 func handlePlay(input string) {
-    if cmdConn == nil {
+    if client == nil {
         fmt.Println("Error: not connected to a tracker")
+        return
     }
 
-    var res proto.TrackerResPacket
-    cmdEnc.Encode(proto.ClientCmdPacket{"play", input})
-    cmdDec.Decode(&res)
-
-    if res.Res == "start" {
-        seedToPeers(input)
-    }
-
-    fmt.Println(res.Res)
+    client.Call("play", proto.ClientCmdMsg{input}, nil)
 }
 
 func handleHelp() {
-    fmt.Print(`commands:
+    fmt.Print(
+`commands:
     join - connect to a tracker
     exit - disconnect from a tracker
     list - list all available songs
@@ -202,7 +172,6 @@ func seedToPeers(songFile string) {
 
 
     // Open the mp3 file
-
     r, err := os.Open("../songs/" + songFile)
     if err != nil {
         fmt.Println(err)
@@ -214,8 +183,8 @@ func seedToPeers(songFile string) {
 }
 
 // Returns csv of all song names in the songs folder.
-func getSongNames() string {
-    var buffer bytes.Buffer
+func getSongNames() ([]string) {
+    var songs []string
     filepath.Walk("../songs", func (p string, i os.FileInfo, err error) error {
         if err != nil {
             log.Println(err)
@@ -224,28 +193,11 @@ func getSongNames() string {
 
         s := filepath.Base(p)
         if strings.Compare(s, "songs") != 0 && strings.Contains(s, ".mp3") {
-            buffer.WriteString(s + ";")
+            songs = append(songs, s)
         }
 
         return nil
     })
 
-    return buffer.String()
-}
-
-// Receive IP addresses of peers
-func receiveNearestNodes() {
-    var info proto.ClientInfoPacket
-    var err error
-
-    dec := gob.NewDecoder(conn)
-    for connected {
-        err = dec.Decode(&info) // hope this blocks
-        if err != nil {
-            // fmt.Println("In receiveNearestNodes")
-            // log.Println(err)
-            // hope no error because it ruins how our command line interface looks
-        }
-        peers = info.ClientIps
-    }
+    return songs
 }

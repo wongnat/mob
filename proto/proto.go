@@ -5,20 +5,20 @@ import (
     "time"
 )
 
-type ClientInitPacket struct {
-    Songs string
+type ClientInfoMsg struct {
+    Ip string
+    List []string
 }
 
-type ClientCmdPacket struct {
-    Cmd string
+type ClientCmdMsg struct {
     Arg string
 }
 
-type TrackerResPacket struct {
+type TrackerRes struct {
     Res string
 }
 
-type TrackerSongsPacket struct {
+type TrackerSlice struct {
     Res []string
 }
 
