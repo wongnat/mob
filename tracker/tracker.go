@@ -6,108 +6,118 @@ import (
     "log"
     "net"
     "strings"
-    "io/ioutil"
+    //"io/ioutil"
     "mob/proto"
-    "encoding/gob"
-    "github.com/tcolgate/mp3"
-    "time"
+    //"encoding/gob"
+    //"github.com/tcolgate/mp3"
+    //"time"
+    "github.com/cenkalti/rpc2"
 )
 
 // IP -> array of songs
-var peer_map map[string][]string
+var peerMap map[string][]string
+// TODO: var liveMap map[string]time.Time
+var songQueue []string
 
-// slice of IPs
-var peers []string
+var currSong string
+// var playing bool
 
-//var song_queue
+// TODO: when all clients in peerMap make rpc to say that they are done with the song
+// notify the next set of seeders to begin seeding
 func main() {
-    peer_map = make(map[string][]string)
-    peers = make([]string, 0)
+    peerMap   = make(map[string][]string)
+    songQueue = make([]string, 0)
+    //playing = false
+
+    srv := rpc2.NewServer()
+
+    srv.Handle("join", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
+        peerMap[args.Ip] = args.List
+        //fmt.Println("Handling join ...")
+        return nil
+    })
+
+    srv.Handle("list", func(client *rpc2.Client, args *proto.ClientCmdMsg, reply *proto.TrackerSlice) error {
+        reply.Res = getSongList()
+        fmt.Println(getSongList())
+        //fmt.Println("Handling list ...")
+        return nil
+    })
+
+    srv.Handle("play", func(client *rpc2.Client, args *proto.ClientCmdMsg, reply *proto.TrackerRes) error {
+        for _, song := range getSongList() {
+            if args.Arg == strings.ToLower(song) {
+                songQueue = append(songQueue, args.Arg)
+                break
+            }
+        }
+
+        // TODO: if no song is playing currently, reply to clients with the song to start seeding
+
+        return nil
+    })
+
+    srv.Handle("leave", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
+        delete(peerMap, args.Ip)
+        return nil
+    })
+
+    srv.Handle("peers", func(client *rpc2.Client, args *proto.ClientCmdMsg, reply *proto.TrackerSlice) error {
+        //fmt.Println("Handling peers ...")
+        keys := make([]string, 0, len(peerMap))
+        for k := range peerMap {
+            keys = append(keys, k)
+        }
+        reply.Res = keys
+        return nil
+    })
+
+    srv.Handle("ping", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
+        if currSong == "" && len(songQueue) > 0 {
+            nextSong := songQueue[0]
+            for _, song := range peerMap[args.Ip] {
+                if song == nextSong {
+                    currSong  = nextSong
+                    songQueue = append(songQueue[:0], songQueue[1:]...)
+                    reply.Res = song
+                    break
+                }
+            }
+        }
+
+        return nil
+    })
+
+    srv.Handle("done", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
+        // TODO: rpc for client to say song is done playing
+        // currSong = ""
+        return nil
+    })
 
     ln, err := net.Listen("tcp", ":" + os.Args[1])
     if err != nil {
-    	// handle error
+        log.Println(err)
     }
 
-    fmt.Println("mob tracker listening on port " + os.Args[1] + " ...")
+    fmt.Println("mob tracker listening on port: " + os.Args[1] + " ...")
 
     for {
-    	conn, err := ln.Accept()
-    	if err != nil {
-    		// handle error
-    	}
-
-    	go handleConnection(conn)
+        srv.Accept(ln)
     }
 }
 
-func handleConnection(conn net.Conn) {
-    fmt.Println("Accepted new client!")
+// TODO: maybe return unique song list
+func getSongList() ([]string) {
+    var songs []string
 
-    var init_packet proto.Client_Init_Packet
-
-    enc := gob.NewEncoder(conn) // Will write to network.
-    dec := gob.NewDecoder(conn) // Will read from network.
-
-    dec.Decode(&init_packet)
-
-    // Add client to our map and slice
-    peers = append(peers, conn.RemoteAddr().String())
-    peer_map[conn.RemoteAddr().String()] = strings.Split(init_packet.Songs, ";")
-
-    go updateInformation(conn)
-
-    // TODO: Listen for client commands
-
-
-    // TODO: Remove this part later
-    // Stream an mp3 to client
-    skipped := 0
-    var counter uint64
-    counter = 0
-    r, err := os.Open("../songs/The-entertainer-piano.mp3")
-    if err != nil {
-        fmt.Println(err)
-        return
+    keys := make([]string, 0, len(peerMap))
+    for k := range peerMap {
+        keys = append(keys, k)
     }
 
-    d := mp3.NewDecoder(r)
-    var f mp3.Frame
-    for {
-
-        if err := d.Decode(&f, &skipped); err != nil {
-            fmt.Println(err)
-            break
-        }
-
-        byte_reader := f.Reader()
-        frame_bytes, e := ioutil.ReadAll(byte_reader)
-        if e != nil {
-            log.Println(err)
-        }
-
-        var frame_packet proto.Mp3_Frame_Packet
-        frame_packet.Seqnum = counter
-        frame_packet.Mp3_frame = frame_bytes
-
-        err := enc.Encode(frame_packet)
-        if err != nil {
-            //fmt.Println(err)
-        }
-
-        counter += 1
-        //fmt.Println(counter)
+    for i := 0; i < len(keys); i++ {
+        songs = append(songs, peerMap[keys[i]]...)
     }
-}
 
-// tracker regularly sends host info to all nodes in order to inform them of the current network
-func updateInformation(conn net.Conn) {
-    enc := gob.NewEncoder(conn) // Will write to network.
-
-    var err error
-
-    for err == nil {
-        err = enc.Encode(proto.Node_Info{peers})
-        time.Sleep(1 * time.Second)
-    }
+    return songs
 }

@@ -5,17 +5,30 @@ import (
     "time"
 )
 
-type Client_Init_Packet struct {
-    Songs string
+type ClientInfoMsg struct {
+    Ip string
+    List []string
 }
 
-type Mp3_Frame_Packet struct {
+type ClientCmdMsg struct {
+    Arg string
+}
+
+type TrackerRes struct {
+    Res string
+}
+
+type TrackerSlice struct {
+    Res []string
+}
+
+type Mp3FramePacket struct {
     Seqnum uint64
-    Mp3_frame []byte
+    Mp3Frame []byte
 }
 
-type Node_Info struct {
-    Nodes []string
+type ClientInfoPacket struct {
+    ClientIps []string
 }
 
 // More packet types:
@@ -35,3 +48,9 @@ func GetRTTBetweenNodes(address string) int64 {
     stats := pinger.Statistics()
     return int64(stats.MinRtt / time.Millisecond)
 }
+
+// TODO: 3-way handshake protocol to set up streaming dependencies
+// 1) clients broadcast udp packet to all other clients
+// 2) if client doesn't have a seeder already, they will ACK received udp packet
+// 3) seeder client will ACK seedee's original ACK to notify that it is being
+//    seeded to. The seedee will set a boolean when they know they are being seeded to.
