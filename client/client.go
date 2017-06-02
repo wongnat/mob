@@ -53,10 +53,16 @@ func main() {
     udpHandshaker, _ = net.Listen("udp", ":6121")
     udpMp3Framer, _  = net.Listen("udp", ":6122")
 
+    handshakeEnc := gob.NewEncoder(udpHandshaker)
+    mp3FrameEnc  := gob.NewEncoder(updMp3Framer)
+
+    handshakeDec := gob.NewDecoder(udpHandshaker)
+    mp3FrameDec  := gob.NewDecoder(updMp3Framer)
+
     // Handle handshakes
     go func() {
         for {
-            
+
         }
     }()
 
