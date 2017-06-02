@@ -10,7 +10,7 @@ import (
     "mob/proto"
     //"encoding/gob"
     //"github.com/tcolgate/mp3"
-    "time"
+    //"time"
     "github.com/cenkalti/rpc2"
 )
 
@@ -19,6 +19,7 @@ var peerMap map[string][]string
 // TODO: var liveMap map[string]time.Time
 var songQueue []string
 
+var currSong string
 // var playing bool
 
 // TODO: when all clients in peerMap make rpc to say that they are done with the song
@@ -72,12 +73,24 @@ func main() {
     })
 
     srv.Handle("ping", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
-        //fmt.Println("Handling peers ...")
-        keys := make([]string, 0, len(peerMap))
-        for k := range peerMap {
-            keys = append(keys, k)
+        if currSong == "" && len(songQueue) > 0 {
+            nextSong := songQueue[0]
+            for _, song := range peerMap[args.Ip] {
+                if song == nextSong {
+                    currSong  = nextSong
+                    songQueue = append(songQueue[:0], songQueue[1:]...)
+                    reply.Res = song
+                    break
+                }
+            }
         }
-        reply.Res = keys
+
+        return nil
+    })
+
+    srv.Handle("done", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
+        // TODO: rpc for client to say song is done playing
+        // currSong = ""
         return nil
     })
 
@@ -93,6 +106,7 @@ func main() {
     }
 }
 
+// TODO: maybe return unique song list
 func getSongList() ([]string) {
     var songs []string
 

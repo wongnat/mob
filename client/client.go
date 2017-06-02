@@ -22,6 +22,12 @@ var peers []string
 var conn net.Conn
 var client *rpc2.Client
 
+
+var udpHandshaker net.Conn
+var udpMp3Framer  net.Conn
+
+// var connected bool
+
 // Assume mp3 is no larger than 50MB
 // We reuse this buffer for each song we play
 // Don't need to worry when it gets GCed since we're using it the whole time
@@ -43,6 +49,23 @@ func main() {
 
     music.Init() // initialize SDL audio
     defer music.Quit()
+
+    udpHandshaker, _ = net.Listen("udp", ":6121")
+    udpMp3Framer, _  = net.Listen("udp", ":6122")
+
+    // Handle handshakes
+    go func() {
+        for {
+            
+        }
+    }()
+
+    // Handle mp3 frames
+    go func() {
+        for {
+
+        }
+    }()
 
     fmt.Print(
 `
@@ -105,9 +128,10 @@ func handleJoin(input string) {
 
     client = rpc2.NewClient(conn)
     go client.Run()
+    go handlePing()
 
-    addr := strings.Split(conn.LocalAddr().String(), ":")[0]
-    client.Call("join", proto.ClientInfoMsg{addr, getSongNames()}, nil)
+    //addr := strings.Split(conn.LocalAddr().String(), ":")[0]
+    client.Call("join", proto.ClientInfoMsg{conn.LocalAddr().String(), getSongNames()}, nil)
     client.Call("peers", proto.ClientCmdMsg{""}, &res)
     peers = res.Res
     fmt.Println(peers)
@@ -142,6 +166,8 @@ func handlePlay(input string) {
     }
 
     client.Call("play", proto.ClientCmdMsg{input}, nil)
+
+    //
 }
 
 func handleHelp() {
@@ -153,6 +179,16 @@ func handleHelp() {
     play - enqueue a song to be played
     help - show commands
 `)
+}
+
+func handlePing() {
+    for {
+        var res proto.TrackerRes
+        client.Call("ping", proto.ClientInfoMsg{conn.LocalAddr().String(), nil}, &res)
+        if res.Res != "" {
+            seedToPeers(res.Res)
+        }
+    }
 }
 
 // udp handshake receive on port 6121
