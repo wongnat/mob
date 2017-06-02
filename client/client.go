@@ -30,10 +30,21 @@ var connected bool
 var songBuf [20 * 1024 * 1024]byte
 
 func main() {
+    c := make(chan os.Signal, 2)
+    signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+    go func() {
+        <-c
+        if cmdConn != nil {
+            handleLeave()
+        }
+        os.Exit(1)
+    }()
+
     music.Init() // initialize SDL audio
     defer music.Quit()
 
-    fmt.Print(`
+    fmt.Print(
+`
               ___.
   _____   ____\_ |__
  /     \ /  _ \| __ \
@@ -45,7 +56,6 @@ func main() {
     fmt.Println("internet radio version 0.0.0")
     reader := bufio.NewReader(os.Stdin)
 
-    loop:
     for {
         fmt.Print(">>> ")
         input, _ := reader.ReadString('\n')
@@ -68,7 +78,7 @@ func main() {
             if cmdConn != nil {
                 handleLeave()
             }
-            break loop
+            return
         case "help": // help
             handleHelp()
         default:     // error message continue
@@ -159,7 +169,7 @@ func handlePlay(input string) {
     cmdDec.Decode(&res)
 
     if res.Res == "start" {
-        seedToPeers()
+        seedToPeers(input)
     }
 
     fmt.Println(res.Res)
@@ -177,7 +187,7 @@ func handleHelp() {
 
 // udp handshake receive on port 6121
 // udp song receive on port 6122
-func seedToPeers() {
+func seedToPeers(songFile string) {
     fmt.Println("starting to seed to peers")
     // check if we have the song locally
         // if so, then open the file
@@ -192,15 +202,15 @@ func seedToPeers() {
 
 
     // Open the mp3 file
-    /*
-    r, err := os.Open("../songs/The-entertainer-piano.mp3")
+
+    r, err := os.Open("../songs/" + songFile)
     if err != nil {
         fmt.Println(err)
         return
     }
 
     d := mp3.NewDecoder(r)
-    music.PlayFromSongBuf(d, &songBuf)*/
+    music.PlayFromMp3Dec(d, &songBuf)
 }
 
 // Returns csv of all song names in the songs folder.
