@@ -40,6 +40,8 @@ func main() {
 
     fmt.Println("mob tracker listening on port " + os.Args[1] + " ...")
 
+    go startPlaying()
+
     for {
     	conn, err := ln.Accept()
     	if err != nil {
@@ -148,4 +150,38 @@ func getSongList() ([]string) {
     }
 
     return songs
+}
+
+func startPlaying() {
+    for {
+        if len(songQueue) > 0 && !playing {
+            song := songQueue[0]
+            var clientAddr string
+            songQueue = append(songQueue[:0], songQueue[1:]...)
+
+            Loop:
+                for k, v := range peerMap {
+                    for currSong := range v.Songs {
+                        if strings.ToLower(currSong) == song {
+                            ip = k
+                            break Loop
+                        }
+                    }
+                }
+
+            songCon, err := net.Dial("tcp", clientAddr + ":6124")
+            if err != nil {
+                fmt.Println("Error in iniating song cycle")
+            }
+
+            songEnc := gob.NewEncoder(songCon) // Will write to network.
+            songDec := gob.NewDecoder(songCon) // Will read from network.
+
+            var res proto.TrackerResPacket
+            cmdEnc.Encode(proto.TrackerResPacket{"start"})
+
+            cmdDec.Decode(&res)
+            playing = false
+        }
+    }
 }
