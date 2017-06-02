@@ -32,6 +32,7 @@ func main() {
     srv := rpc2.NewServer()
 
     srv.Handle("join", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
+        // TODO: set ip to be from client object?
         peerMap[args.Ip] = args.List
         //fmt.Println("Handling join ...")
         return nil
@@ -73,6 +74,7 @@ func main() {
     })
 
     srv.Handle("ping", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
+        fmt.Println("Handling ping from " + args.Ip)
         if currSong == "" && len(songQueue) > 0 {
             nextSong := songQueue[0]
             for _, song := range peerMap[args.Ip] {

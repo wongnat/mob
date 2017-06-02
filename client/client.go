@@ -7,13 +7,14 @@ import (
     "bufio"
     "fmt"
     "log"
-    //"bytes"
+    "bytes"
+    "encoding/binary"
     "strings"
     "path/filepath"
     "net"
     "mob/proto"
     "mob/client/music"
-    "github.com/tcolgate/mp3"
+    //"github.com/tcolgate/mp3"
     "github.com/cenkalti/rpc2"
 )
 
@@ -22,9 +23,10 @@ var peers []string
 var conn net.Conn
 var client *rpc2.Client
 
+var ip net.IP
 
-var udpHandshaker net.Conn
-var udpMp3Framer  net.Conn
+var udpHandshaker *net.UDPConn
+var udpMp3Framer  *net.UDPConn
 
 // var connected bool
 
@@ -50,28 +52,33 @@ func main() {
     music.Init() // initialize SDL audio
     defer music.Quit()
 
-    udpHandshaker, _ = net.Listen("udp", ":6121")
-    udpMp3Framer, _  = net.Listen("udp", ":6122")
 
-    handshakeEnc := gob.NewEncoder(udpHandshaker)
-    mp3FrameEnc  := gob.NewEncoder(updMp3Framer)
+    ifaces, _ := net.Interfaces()
+    // handle err
+    for _, i := range ifaces {
+        addrs, _ := i.Addrs()
+        // handle err
+        for _, addr := range addrs {
 
-    handshakeDec := gob.NewDecoder(udpHandshaker)
-    mp3FrameDec  := gob.NewDecoder(updMp3Framer)
-
-    // Handle handshakes
-    go func() {
-        for {
-
+            switch v := addr.(type) {
+            case *net.IPNet:
+                    ip = v.IP
+            case *net.IPAddr:
+                    ip = v.IP
+            }
+            // process IP address
         }
-    }()
+    }
 
-    // Handle mp3 frames
-    go func() {
-        for {
+    //fmt.Println(ip.String())
+    //os.Exit(0)
 
-        }
-    }()
+    handshakeAddr := net.UDPAddr{IP: ip, Port: 6121,}
+    mp3FrameAddr  := net.UDPAddr{IP: ip, Port: 6122,}
+
+    udpHandshaker, _ = net.ListenUDP("udp", &handshakeAddr)
+    udpMp3Framer, _  = net.ListenUDP("udp", &mp3FrameAddr)
+
 
     fmt.Print(
 `
@@ -137,7 +144,8 @@ func handleJoin(input string) {
     go handlePing()
 
     //addr := strings.Split(conn.LocalAddr().String(), ":")[0]
-    client.Call("join", proto.ClientInfoMsg{conn.LocalAddr().String(), getSongNames()}, nil)
+    _, port, _ := net.SplitHostPort(conn.LocalAddr().String())
+    client.Call("join", proto.ClientInfoMsg{net.JoinHostPort(ip.String(), port), getSongNames()}, nil)
     client.Call("peers", proto.ClientCmdMsg{""}, &res)
     peers = res.Res
     fmt.Println(peers)
@@ -188,19 +196,74 @@ func handleHelp() {
 }
 
 func handlePing() {
+    _, port, _ := net.SplitHostPort(conn.LocalAddr().String())
     for {
         var res proto.TrackerRes
-        client.Call("ping", proto.ClientInfoMsg{conn.LocalAddr().String(), nil}, &res)
+        client.Call("ping", proto.ClientInfoMsg{net.JoinHostPort(ip.String(), port), nil}, &res)
         if res.Res != "" {
-            seedToPeers(res.Res)
+            go seedToPeers(res.Res)
         }
     }
+}
+
+func listenForSeeders() {
+
 }
 
 // udp handshake receive on port 6121
 // udp song receive on port 6122
 func seedToPeers(songFile string) {
-    fmt.Println("starting to seed to peers")
+    // Handle handshakes
+    req := proto.HandshakePacket{ip.String()}
+
+    buf := &bytes.Buffer{}
+    err := binary.Write(buf, binary.BigEndian, &req)
+    if err != nil {
+        log.Println(err)
+    }
+
+    var peerToConn map[string]net.Conn
+
+    // loop to broadcast
+    for _, peer := range peers {
+        addr, _, _ := net.SplitHostPort(peer)
+        udpConn, _ := net.Dial("udp", net.JoinHostPort(addr, "6121"))
+        peerToConn[peer] = udpConn
+        udpConn.Write(buf.Bytes())
+    }
+
+    var seedees []string
+    seedeeCount := 0
+    for peer, _ := range peerToConn {
+        go func () {
+            recvBuf := make([]byte, 2048)
+            var tmpBuf *bytes.Reader
+            ack := proto.HandshakePacket{}
+            peerToConn[peer].Read(recvBuf)
+            tmpBuf = bytes.NewReader(recvBuf)
+            binary.Read(tmpBuf, binary.BigEndian, &ack)
+            if (seedeeCount < 2) {
+                seedees = append(seedees, peer)
+                seedeeCount++
+            }
+        }()
+    }
+
+    req = proto.HandshakePacket{ip.String()}
+    buf = &bytes.Buffer{}
+    err = binary.Write(buf, binary.BigEndian, &req)
+    for _, seedee := range seedees {
+        peerToConn[seedee].Write(buf.Bytes())
+    }
+
+
+    // Handle mp3 frames
+
+    //for {
+
+    //}
+
+
     // check if we have the song locally
         // if so, then open the file
         // else wait for songBuf to be populated
@@ -214,6 +277,7 @@ func seedToPeers(songFile string) {
 
 
     // Open the mp3 file
+    /*
     r, err := os.Open("../songs/" + songFile)
     if err != nil {
         fmt.Println(err)
@@ -221,7 +285,7 @@ func seedToPeers(songFile string) {
     }
 
     d := mp3.NewDecoder(r)
-    music.PlayFromMp3Dec(d, &songBuf)
+    music.PlayFromMp3Dec(d, &songBuf)*/
 }
 
 // Returns csv of all song names in the songs folder.

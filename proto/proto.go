@@ -31,6 +31,10 @@ type ClientInfoPacket struct {
     ClientIps []string
 }
 
+type HandshakePacket struct {
+        Ip string
+}
+
 // More packet types:
 
 
