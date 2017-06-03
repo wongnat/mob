@@ -102,7 +102,7 @@ func main() {
               }
           }
           // Song not found, this peer needs to listen for seeders
-          client.Call("listenForSeeders", proto.ListenForSeeders{}, nil)  
+          client.Call("listenForSeeders", proto.ListenForSeeders{}, nil)
         }
         // TODO update livemap
         return nil)

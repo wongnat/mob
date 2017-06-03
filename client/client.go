@@ -32,6 +32,8 @@ var udpHandshaker *net.UDPConn
 var udpMp3Framer  *net.UDPConn
 
 var needsSeeder bool
+var alreadylistening bool
+var alreadyseeding bool
 
 var mu sync.Mutex
 
@@ -221,9 +223,9 @@ func handlePing() {
     for {
         var res proto.TrackerRes
         client.Call("ping", proto.ClientInfoMsg{net.JoinHostPort(publicIp, port), nil}, &res)
-        if res.Res != "" {
-            go seedToPeers(res.Res)
-        }
+        // if res.Res != "" {
+        //     go seedToPeers(res.Res)
+        // }
     }
 }
 
@@ -266,6 +268,8 @@ func listenForSeeders(publicIp string) {
         if peerMap[res.Ip] {
           needsSeeder = false
           udpHandshaker.Close()
+          alreadylistening = false
+          fmt.Println("Confirming a seeder!")
           break
         }
 
@@ -291,6 +295,7 @@ func listenForSeeders(publicIp string) {
 // udp song receive on port 6122
 func seedToPeers(songFile string) {
     // Handle handshakes
+    fmt.Println("Sending to peers")
     req := proto.HandshakePacket{publicIp}
 
     buf := &bytes.Buffer{}
@@ -313,6 +318,7 @@ func seedToPeers(songFile string) {
         peerToConn[peer].SetReadDeadline(time.Millisecond * 500)
         udpConn.Write(buf.Bytes())
     }
+    fmt.Println("Broadcast to all peers done")
 
     var seedees []string
     seedeeCount := 0
@@ -330,6 +336,7 @@ func seedToPeers(songFile string) {
             mu.Lock()
             defer mu.Unlock()
             if (seedeeCount < 2) {
+                fmt.Println("Received accept")
                 seedees = append(seedees, peer)
                 seedeeCount++
             }
@@ -342,6 +349,7 @@ func seedToPeers(songFile string) {
     for _, seedee := range seedees {
         peerToConn[seedee].Write(buf.Bytes())
     }
+    fmt.Println("Done with handshake")
 
     found := false
     if _, song := range getSongNames() {
