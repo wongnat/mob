@@ -12,6 +12,7 @@ import (
     "strings"
     "path/filepath"
     "net"
+    "net/http"
     "mob/proto"
     "mob/client/music"
     //"github.com/tcolgate/mp3"
@@ -23,7 +24,7 @@ var peers []string
 var conn net.Conn
 var client *rpc2.Client
 
-var ip net.IP
+var publicIp string
 
 var udpHandshaker *net.UDPConn
 var udpMp3Framer  *net.UDPConn
@@ -52,33 +53,18 @@ func main() {
     music.Init() // initialize SDL audio
     defer music.Quit()
 
+    resp, err := http.Get("http://myexternalip.com/raw")
+	if err != nil {
+		os.Stderr.WriteString(err.Error())
+		os.Stderr.WriteString("\n")
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+    ipBuf := bytes.Buffer{}
+    ipBuf.ReadFrom(resp.Body)
+    publicIp = ipBuf.String()
 
-    ifaces, _ := net.Interfaces()
-    // handle err
-    for _, i := range ifaces {
-        addrs, _ := i.Addrs()
-        // handle err
-        for _, addr := range addrs {
-
-            switch v := addr.(type) {
-            case *net.IPNet:
-                    ip = v.IP
-            case *net.IPAddr:
-                    ip = v.IP
-            }
-            // process IP address
-        }
-    }
-
-    //fmt.Println(ip.String())
-    //os.Exit(0)
-
-    handshakeAddr := net.UDPAddr{IP: ip, Port: 6121,}
-    mp3FrameAddr  := net.UDPAddr{IP: ip, Port: 6122,}
-
-    udpHandshaker, _ = net.ListenUDP("udp", &handshakeAddr)
-    udpMp3Framer, _  = net.ListenUDP("udp", &mp3FrameAddr)
-
+    listenForSeeders(publicIp)
 
     fmt.Print(
 `
@@ -131,7 +117,7 @@ func handleJoin(input string) {
         handleLeave()
     }
 
-    var res proto.TrackerSlice
+    //var res proto.TrackerSlice
     var err error
 
     conn, err = net.Dial("tcp", input)
@@ -145,10 +131,10 @@ func handleJoin(input string) {
 
     //addr := strings.Split(conn.LocalAddr().String(), ":")[0]
     _, port, _ := net.SplitHostPort(conn.LocalAddr().String())
-    client.Call("join", proto.ClientInfoMsg{net.JoinHostPort(ip.String(), port), getSongNames()}, nil)
-    client.Call("peers", proto.ClientCmdMsg{""}, &res)
-    peers = res.Res
-    fmt.Println(peers)
+    client.Call("join", proto.ClientInfoMsg{net.JoinHostPort(publicIp, port), getSongNames()}, nil)
+    //client.Call("peers", proto.ClientCmdMsg{""}, &res)
+    //peers = res.Res
+    //fmt.Println(peers)
 }
 
 func handleLeave() {
@@ -199,22 +185,38 @@ func handlePing() {
     _, port, _ := net.SplitHostPort(conn.LocalAddr().String())
     for {
         var res proto.TrackerRes
-        client.Call("ping", proto.ClientInfoMsg{net.JoinHostPort(ip.String(), port), nil}, &res)
+        client.Call("ping", proto.ClientInfoMsg{net.JoinHostPort(publicIp, port), nil}, &res)
         if res.Res != "" {
             go seedToPeers(res.Res)
         }
     }
 }
 
-func listenForSeeders() {
+func listenForSeeders(publicIp string) {
+    handshakeAddr := net.UDPAddr{IP: net.ParseIP(publicIp), Port: 6121,}
+    mp3FrameAddr  := net.UDPAddr{IP: net.ParseIP(publicIp), Port: 6122,}
 
+    udpHandshaker, _ = net.ListenUDP("udp", &handshakeAddr)
+    udpMp3Framer, _  = net.ListenUDP("udp", &mp3FrameAddr)
+
+    go func() {
+        for {
+
+        }
+    }()
+
+    go func() {
+        for {
+
+        }
+    }()
 }
 
 // udp handshake receive on port 6121
 // udp song receive on port 6122
 func seedToPeers(songFile string) {
     // Handle handshakes
-    req := proto.HandshakePacket{ip.String()}
+    req := proto.HandshakePacket{publicIp}
 
     buf := &bytes.Buffer{}
     err := binary.Write(buf, binary.BigEndian, &req)
@@ -223,6 +225,10 @@ func seedToPeers(songFile string) {
     }
 
     var peerToConn map[string]net.Conn
+    var res proto.TrackerSlice
+
+    client.Call("peers", proto.ClientCmdMsg{""}, &res)
+    peers = res.Res
 
     // loop to broadcast
     for _, peer := range peers {
@@ -249,7 +255,7 @@ func seedToPeers(songFile string) {
         }()
     }
 
-    req = proto.HandshakePacket{ip.String()}
+    req = proto.HandshakePacket{publicIp}
     buf = &bytes.Buffer{}
     err = binary.Write(buf, binary.BigEndian, &req)
     for _, seedee := range seedees {
