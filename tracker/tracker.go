@@ -91,21 +91,22 @@ func main() {
         // If no song is currently playing and there is a song ready to be seeded
         // TODO make currentlyplaying a global boolean and toggle it on and off in tracker's
         // play and done handlers respectively
-        if !currentlyplaying && len(songqueue) > 0 {
-          nextsong := songQueue[0]
+        if !currentlyplaying && len(songQueue) > 0 {
+          nextSong := songQueue[0]
           for _, song := range peerMap[args.Ip] {
               if song == nextSong {
                   currSong  = nextSong
-                  client.Call("seedToPeers", proto.SeedToPeers{currSong}, nil)
+                  client.Call("seedToPeers", proto.SeedToPeersPacket{currSong}, nil)
                   reply.Res = song
                   return nil
               }
           }
           // Song not found, this peer needs to listen for seeders
-          client.Call("listenForSeeders", proto.ListenForSeeders{}, nil)
+          client.Call("listenForSeeders", proto.ListenForSeedersPacket{}, nil)
         }
         // TODO update livemap
-        return nil)
+        return nil
+    })
 
     srv.Handle("done", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
         // TODO: rpc for client to say song is done playing
