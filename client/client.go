@@ -29,7 +29,9 @@ var publicIp string
 var udpHandshaker *net.UDPConn
 var udpMp3Framer  *net.UDPConn
 
-// var connected bool
+var needsSeeder bool
+
+// TODO: currSong string
 
 // Assume mp3 is no larger than 50MB
 // We reuse this buffer for each song we play
@@ -64,7 +66,7 @@ func main() {
     ipBuf.ReadFrom(resp.Body)
     publicIp = ipBuf.String()
 
-    listenForSeeders(publicIp)
+    needsSeeder = true
 
     fmt.Print(
 `
@@ -128,6 +130,7 @@ func handleJoin(input string) {
     client = rpc2.NewClient(conn)
     go client.Run()
     go handlePing()
+    go listenForSeeders(publicIp)
 
     //addr := strings.Split(conn.LocalAddr().String(), ":")[0]
     _, port, _ := net.SplitHostPort(conn.LocalAddr().String())
@@ -192,26 +195,65 @@ func handlePing() {
     }
 }
 
-func listenForSeeders(publicIp string) {
-    handshakeAddr := net.UDPAddr{IP: net.ParseIP(publicIp), Port: 6121,}
+// TODO: when song is done playing, set songBuf = songBuf[:0] to clear it
+func listenForMp3Frames(publicIp string) {
     mp3FrameAddr  := net.UDPAddr{IP: net.ParseIP(publicIp), Port: 6122,}
-
-    udpHandshaker, _ = net.ListenUDP("udp", &handshakeAddr)
     udpMp3Framer, _  = net.ListenUDP("udp", &mp3FrameAddr)
 
-    go func() {
-        for {
-
-        }
-    }()
-
-    go func() {
-        for {
-
-        }
-    }()
+    //for {
+    //    n, addr, err := udpHandshaker.ReadFromUDP(songBuf)
+    //}
 }
 
+// TODO: we want to make listenForSeeders and seedToPeers rpc's for the tracker
+// that will be called in response to a ping rpc
+
+// TODO: maybe make this an rpc for the tracker, so that we don't have to
+// continuously listen, and instead call it when the next song to be played is
+// ready
+func listenForSeeders(publicIp string) {
+    handshakeAddr := net.UDPAddr{IP: net.ParseIP(publicIp), Port: 6121,}
+    udpHandshaker, _ = net.ListenUDP("udp", &handshakeAddr)
+
+    peerMap := make(map[string]bool)
+
+    // Listen for handshakes
+    for {
+        // for currSong == "" {}
+        // TODO: if we have the song, don't listen for seeders
+        // TODO: If you are a seeder don't do any of this
+        // Read a seeder request
+        buf := make([]byte, 1024)
+        n, addr, err := udpHandshaker.ReadFromUDP(buf)
+
+        var tmpBuf *bytes.Reader
+        res := proto.HandshakePacket{}
+        tmpBuf = bytes.NewReader(buf)
+        binary.Read(tmpBuf, binary.BigEndian, &res)
+
+        if peerMap[res.Ip] {
+                needsSeeder = false
+                continue
+        }
+
+        peerMap[res.Ip] = true
+
+        // Send an ACK
+        var ack proto.HandshakePacket
+        if needsSeeder {
+            ack = proto.HandshakePacket{"accept"}
+        } else {
+            ack = proto.HandshakePacket{"reject"}
+        }
+
+        sendBuf = &bytes.Buffer{}
+        err := binary.Write(sendBuf, binary.BigEndian, &ack)
+
+        m, err := handshakeAddr.WriteToUDP(sendBuf.Bytes(), addr)
+    }
+}
+
+// TODO: make this an rpc for the tracker
 // udp handshake receive on port 6121
 // udp song receive on port 6122
 func seedToPeers(songFile string) {
@@ -248,7 +290,7 @@ func seedToPeers(songFile string) {
             peerToConn[peer].Read(recvBuf)
             tmpBuf = bytes.NewReader(recvBuf)
             binary.Read(tmpBuf, binary.BigEndian, &ack)
-            if (seedeeCount < 2) {
+            if (ack.Res == "accept" && seedeeCount < 2) {
                 seedees = append(seedees, peer)
                 seedeeCount++
             }
@@ -262,36 +304,35 @@ func seedToPeers(songFile string) {
         peerToConn[seedee].Write(buf.Bytes())
     }
 
-
-    // Handle mp3 frames
-
-    //for {
-
-    //}
-
-
-    // check if we have the song locally
-        // if so, then open the file
-        // else wait for songBuf to be populated
-
-    // begin sending UDP packets with mp3 frames to peers
-
-    // delay
-
-    // start playing the song
-
-
-
-    // Open the mp3 file
-    /*
-    r, err := os.Open("../songs/" + songFile)
-    if err != nil {
-        fmt.Println(err)
-        return
+    found := false
+    if _, song := range getSongNames() {
+        if song == songFile {
+            found = true
+            break
+        }
     }
 
-    d := mp3.NewDecoder(r)
-    music.PlayFromMp3Dec(d, &songBuf)*/
+    if found {
+        r, err := os.Open("../songs/" + songFile)
+        if err != nil {
+            fmt.Println(err)
+            return
+        }
+
+        d := mp3.NewDecoder(r)
+        // buffer to songBuf
+        //music.PlayFromMp3Dec(d, &songBuf)
+    }
+
+    // stream from songBuf
+
+    // we want to make an rpc to let the tracker know we're ready to start playing,
+    // then the tracker will notifies when to play
+    //
+    // music.Play // this will block until song is done
+    // free the music
+    needsSeeder = true
+
 }
 
 // Returns csv of all song names in the songs folder.

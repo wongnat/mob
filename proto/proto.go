@@ -32,7 +32,7 @@ type ClientInfoPacket struct {
 }
 
 type HandshakePacket struct {
-        Ip string
+    Res string
 }
 
 // More packet types:
