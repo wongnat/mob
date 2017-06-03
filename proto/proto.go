@@ -43,11 +43,11 @@ type SeedToPeersReply struct {
   // EMPTY
 }
 
-type ListenForPeersPacket struct {
+type ListenForSeedersPacket struct {
   // EMPTY
 }
 
-type ListenForPeersReply struct {
+type ListenForSeedersReply struct {
   // EMPTY
 }
 

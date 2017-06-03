@@ -12,7 +12,7 @@ import (
     "strings"
     "path/filepath"
     "net"
-    "net/http"
+    //"net/http"
     "mob/proto"
     "mob/client/music"
     //"github.com/tcolgate/mp3"
@@ -61,6 +61,7 @@ func main() {
     music.Init() // initialize SDL audio
     defer music.Quit()
 
+/*
     resp, err := http.Get("http://myexternalip.com/raw")
 	if err != nil {
 		os.Stderr.WriteString(err.Error())
@@ -69,8 +70,11 @@ func main() {
 	}
 	defer resp.Body.Close()
     ipBuf := bytes.Buffer{}
-    ipBuf.ReadFrom(resp.Body)
-    publicIp = ipBuf.String()
+    ipBuf.ReadFrom(resp.Body)*/
+
+    //publicIp = ipBuf.String()
+
+    publicIp = os.Args[1]
 
     needsSeeder = true
 
@@ -149,7 +153,7 @@ func handleJoin(input string) {
         return nil
     })
 
-    client.Handle("listenForSeeders", func(client *rpc2.Client, args *proto.listenForSeedersPacket, reply *proto.listenForSeedersReply) erro {
+    client.Handle("listenForSeeders", func(client *rpc2.Client, args *proto.ListenForSeedersPacket, reply *proto.ListenForSeedersReply) error {
       // TODO: make alreadylistening a global variable
       if (alreadylistening) {
         return nil
@@ -258,14 +262,14 @@ func listenForSeeders(publicIp string) {
     for {
         // Read a seeder request
         buf := make([]byte, 1024)
-        n, addr, err := udpHandshaker.ReadFromUDP(buf)
+        _, addr, _ := udpHandshaker.ReadFromUDP(buf)
 
         var tmpBuf *bytes.Reader
         res := proto.HandshakePacket{}
         tmpBuf = bytes.NewReader(buf)
         binary.Read(tmpBuf, binary.BigEndian, &res)
 
-        if peerMap[res.Ip] {
+        if peerMap[res.Res] {
           needsSeeder = false
           udpHandshaker.Close()
           alreadylistening = false
@@ -273,7 +277,7 @@ func listenForSeeders(publicIp string) {
           break
         }
 
-        peerMap[res.Ip] = true
+        peerMap[res.Res] = true
 
         // Send an ACK
         var ack proto.HandshakePacket
@@ -284,10 +288,10 @@ func listenForSeeders(publicIp string) {
         //     ack = proto.HandshakePacket{"reject"}
         // }
 
-        sendBuf = &bytes.Buffer{}
-        err := binary.Write(sendBuf, binary.BigEndian, &ack)
+        sendBuf := &bytes.Buffer{}
+        binary.Write(sendBuf, binary.BigEndian, &ack)
 
-        m, err := handshakeAddr.WriteToUDP(sendBuf.Bytes(), addr)
+        udpHandshaker.WriteToUDP(sendBuf.Bytes(), addr)
     }
 }
 
@@ -315,7 +319,7 @@ func seedToPeers(songFile string) {
         addr, _, _ := net.SplitHostPort(peer)
         udpConn, _ := net.Dial("udp", net.JoinHostPort(addr, "6121"))
         peerToConn[peer] = udpConn
-        peerToConn[peer].SetReadDeadline(time.Millisecond * 500)
+
         udpConn.Write(buf.Bytes())
     }
     fmt.Println("Broadcast to all peers done")
@@ -327,7 +331,8 @@ func seedToPeers(songFile string) {
             recvBuf := make([]byte, 2048)
             var tmpBuf *bytes.Reader
             ack := proto.HandshakePacket{}
-            _, _, err := peerToConn[peer].ReadFromUDP(recvBuf)
+            peerToConn[peer].SetReadDeadline(time.Now().Add(time.Millisecond * 500))
+            _, err := peerToConn[peer].Read(recvBuf)
             if (err != nil) {
               return
             }
@@ -352,7 +357,7 @@ func seedToPeers(songFile string) {
     fmt.Println("Done with handshake")
 
     found := false
-    if _, song := range getSongNames() {
+    for _, song := range getSongNames() {
         if song == songFile {
             found = true
             break
@@ -360,13 +365,13 @@ func seedToPeers(songFile string) {
     }
 
     if found {
-        r, err := os.Open("../songs/" + songFile)
+        /*r, err := os.Open("../songs/" + songFile)
         if err != nil {
             fmt.Println(err)
             return
-        }
+        }*/
 
-        d := mp3.NewDecoder(r)
+        //d := mp3.NewDecoder(r)
         // buffer to songBuf
         //music.PlayFromMp3Dec(d, &songBuf)
     }
