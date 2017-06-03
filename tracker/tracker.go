@@ -20,14 +20,14 @@ var peerMap map[string][]string
 var songQueue []string
 
 var currSong string
-// var playing bool
+var currentlyplaying bool  // Is a song playing on clients
 
 // TODO: when all clients in peerMap make rpc to say that they are done with the song
 // notify the next set of seeders to begin seeding
 func main() {
     peerMap   = make(map[string][]string)
     songQueue = make([]string, 0)
-    //playing = false
+    currentlyplaying = false
 
     srv := rpc2.NewServer()
 
@@ -75,7 +75,8 @@ func main() {
 
     srv.Handle("ping", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
         fmt.Println("Handling ping from " + args.Ip)
-        if currSong == "" && len(songQueue) > 0 {
+
+        /*if currSong == "" && len(songQueue) > 0 {
             nextSong := songQueue[0]
             for _, song := range peerMap[args.Ip] {
                 if song == nextSong {
@@ -85,10 +86,26 @@ func main() {
                     break
                 }
             }
-        }
+        }*/
 
-        return nil
-    })
+        // If no song is currently playing and there is a song ready to be seeded
+        // TODO make currentlyplaying a global boolean and toggle it on and off in tracker's
+        // play and done handlers respectively
+        if !currentlyplaying && len(songqueue) > 0 {
+          nextsong := songQueue[0]
+          for _, song := range peerMap[args.Ip] {
+              if song == nextSong {
+                  currSong  = nextSong
+                  client.Call("seedToPeers", proto.SeedToPeers{currSong}, nil)
+                  reply.Res = song
+                  return nil
+              }
+          }
+          // Song not found, this peer needs to listen for seeders
+          client.Call("listenForSeeders", proto.ListenForSeeders{}, nil)  
+        }
+        // TODO update livemap
+        return nil)
 
     srv.Handle("done", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
         // TODO: rpc for client to say song is done playing

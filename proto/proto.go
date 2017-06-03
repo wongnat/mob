@@ -35,6 +35,22 @@ type HandshakePacket struct {
     Res string
 }
 
+type SeedToPeersPacket struct {
+    SongFile string
+}
+
+type SeedToPeersReply struct {
+  // EMPTY
+}
+
+type ListenForPeersPacket struct {
+  // EMPTY
+}
+
+type ListenForPeersReply struct {
+  // EMPTY
+}
+
 // More packet types:
 
 
