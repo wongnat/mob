@@ -308,6 +308,8 @@ func seedToPeers(songFile string) {
     }
 
     var peerToConn map[string]net.Conn  // ip address to a connection
+    peerToConn := make(map[string]net.Conn)
+
     var res proto.TrackerSlice
 
     client.Call("peers", proto.ClientCmdMsg{""}, &res)
