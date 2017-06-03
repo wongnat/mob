@@ -97,7 +97,6 @@ func main() {
         input, _ := reader.ReadString('\n')
         input = strings.TrimSuffix(input, "\n")
         input = strings.TrimSpace(input)
-        input = strings.ToLower(input)
 
         strs := strings.Split(input, " ")
 

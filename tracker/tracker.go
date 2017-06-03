@@ -46,8 +46,10 @@ func main() {
     })
 
     srv.Handle("play", func(client *rpc2.Client, args *proto.ClientCmdMsg, reply *proto.TrackerRes) error {
+      fmt.Println("Got request to play " + args.Arg)
         for _, song := range getSongList() {
-            if args.Arg == strings.ToLower(song) {
+            if args.Arg == song {
+                fmt.Println("Enqueued " + song)
                 songQueue = append(songQueue, args.Arg)
                 break
             }
@@ -74,7 +76,7 @@ func main() {
     })
 
     srv.Handle("ping", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
-        fmt.Println("Handling ping from " + args.Ip)
+        //fmt.Println("Handling ping from " + args.Ip)
 
         /*if currSong == "" && len(songQueue) > 0 {
             nextSong := songQueue[0]
@@ -92,15 +94,18 @@ func main() {
         // TODO make currentlyplaying a global boolean and toggle it on and off in tracker's
         // play and done handlers respectively
         if !currentlyplaying && len(songQueue) > 0 {
+
           nextSong := songQueue[0]
           for _, song := range peerMap[args.Ip] {
               if song == nextSong {
                   currSong  = nextSong
+                  fmt.Println("Contacting seeders to seed to peers ...")
                   client.Call("seedToPeers", proto.SeedToPeersPacket{currSong}, nil)
                   reply.Res = song
                   return nil
               }
           }
+            fmt.Println("Contacting peers to begin listening for seeders ...")
           // Song not found, this peer needs to listen for seeders
           client.Call("listenForSeeders", proto.ListenForSeedersPacket{}, nil)
         }
