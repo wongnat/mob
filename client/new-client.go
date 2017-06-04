@@ -17,6 +17,7 @@ import (
     //"github.com/tcolgate/mp3"
     "github.com/cenkalti/rpc2"
     "time"
+    "sync"
 )
 
 // TCP and RPC handlers for the tracker
@@ -274,10 +275,12 @@ func listenForPeers() {
         }
         s := string(buffer[:n])
         substrs := strings.Split(s, ":")
-        ip, _, _ := net.SplitHostPort(addr.String())
-        dest := net.JoinHostPort(ip, "6121")
-        fmt.Println(dest)
+        ip, port, _ := net.SplitHostPort(addr.String())
+        //dest := net.JoinHostPort(ip, "6121")
+        fmt.Println(ip)
+        fmt.Println(port)
         fmt.Println(s)
+        //raddr := net.UDPAddr{IP: net.ParseIP(ip), Port: 6121}
 
         // Process the packet and handle
         switch substrs[0] {
@@ -285,14 +288,14 @@ func listenForPeers() {
             if isSeeder || hasSongLocally(substrs[1]) {
                 go func() {
                     for i := 0; i < 10; i++ { // redundancy
-                        packetConn.WriteTo([]byte("reject"), dest)
+                        packetConn.WriteTo([]byte("reject"), addr)
                         time.Sleep(500 * time.Microsecond)
                     }
                 }()
             } else {
                 go func() {
                     for i := 0; i < 10; i++ { // redundancy
-                        packetConn.WriteTo([]byte("accept"), dest)
+                        packetConn.WriteTo([]byte("accept"), addr)
                         time.Sleep(500 * time.Microsecond)
                     }
                 }()
@@ -301,7 +304,7 @@ func listenForPeers() {
             if isSeeder {
                 go func() {
                     for i := 0; i < 10; i++ { // redundancy
-                        packetConn.WriteTo([]byte("reject"), dest)
+                        packetConn.WriteTo([]byte("reject"), addr)
                         time.Sleep(500 * time.Microsecond)
                     }
                 }()
@@ -316,7 +319,7 @@ func listenForPeers() {
                 seedees = append(seedees, ip)
                 go func() {
                     for i := 0; i < 10; i++ { // redundancy
-                        packetConn.WriteTo([]byte("confirm"), dest)
+                        packetConn.WriteTo([]byte("confirm"), addr)
                         time.Sleep(500 * time.Microsecond)
                     }
                 }()
