@@ -37,7 +37,7 @@ var isSeeder bool           // tells us if we have access to the mp3 or not
 var alreadySeeding bool     // prevent tracker rpc from being over called
 
 // Seeder's data structures
-var peerToConn map[string]net.Conn
+var peerToConn map[string]bool
 var seedees []string
 
 var maxSeedees int
@@ -70,7 +70,7 @@ func main() {
     // Set max number of seedees to our stream to prevent congestion on peers
     maxSeedees = 1
     seedees = make([]string, 0)
-    peerToConn = make(map[string]net.Conn)
+    peerToConn = make(map[string]bool)
     connectedToTracker = false
     isSeeder = false
     alreadySeeding = false
@@ -323,19 +323,19 @@ func listenForPeers() {
                         time.Sleep(500 * time.Microsecond)
                     }
                 }()
-                peerToConn[ip].Close()
-                peerToConn[ip] = nil
+                //peerToConn[ip].Close()
+                peerToConn[ip] = true
             } else if isSeeder && len(seedees) >= maxSeedees {
-                peerToConn[ip].Close()
-                peerToConn[ip] = nil
+                //peerToConn[ip].Close()
+                peerToConn[ip] = true
             } else {
                 // is a non-seeder; shouldn't get here
                 log.Fatal("non-seeder tried to accept other non-seeder")
             }
         case "reject": // where this client is a seeder
             // Clean up our connection to this peer
-            peerToConn[ip].Close()
-            peerToConn[ip] = nil
+            //peerToConn[ip].Close()
+            peerToConn[ip] = true
         }
     }
 }
@@ -350,7 +350,7 @@ func seedToPeers(songFile string) {
     var peers proto.TrackerSlice
     client.Call("list-peers", proto.ClientCmdMsg{""}, &peers)
 
-    peerToConn = make(map[string]net.Conn)
+    peerToConn = make(map[string]bool)
     seedees = make([]string, 0)
 
     // Loop to acquire udp connections to all other peers
@@ -366,13 +366,14 @@ func seedToPeers(songFile string) {
 
             //pc, _ := net.Dial("udp", net.JoinHostPort(ip, "6121"))
             fmt.Println("contacting " + net.JoinHostPort(ip, "6121") + " ...")
-            peerToConn[ip] = pc
+            peerToConn[ip] = false
 
             wg.Add(1)
             // ARQ requests to the peer until we set its net.Conn to nil
             go func() {
                 defer wg.Done()
-                for peerToConn[ip] != nil {
+                defer pc.Close()
+                for !peerToConn[ip] {
                     pc.Write([]byte("request:" + songFile))
                     time.Sleep(500 * time.Microsecond)
                 }
