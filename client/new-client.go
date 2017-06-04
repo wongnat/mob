@@ -264,11 +264,14 @@ func listenForPeers() {
         buffer := make([]byte, 1024)
         n, addr, e := packetConn.ReadFrom(buffer) // block here
         if e != nil {
+            log.Fatal("error when reading packet")
             return
         }
         s := string(buffer[:n])
         substrs := strings.Split(s, ":")
-        ip, _, _ := net.SplitHostPort(addr.String())
+        ip, port, _ := net.SplitHostPort(addr.String())
+        fmt.Println("ip: " + ip)
+        fmt.Println("port: " + port)
 
         // Process the packet and handle
         switch substrs[0] {
