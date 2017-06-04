@@ -70,7 +70,7 @@ func main() {
     // Set max number of seedees to our stream to prevent congestion on peers
     maxSeedees = 1
     seedees = make([]string, 0)
-
+    peerToConn = make(map[string]net.Conn)
     connectedToTracker = false
     isSeeder = false
     alreadySeeding = false
@@ -359,7 +359,12 @@ func seedToPeers(songFile string) {
 
         if ip != publicIp { // check not this client
             // Connect to an available peer
-            pc, _ := net.Dial("udp", net.JoinHostPort(ip, "6121"))
+            laddr := net.UDPAddr{IP: net.ParseIP(publicIp), Port: 6121}
+	        raddr := net.UDPAddr{IP: net.ParseIP(ip), Port: 6121}
+
+	        pc, _ := net.DialUDP("udp", &laddr, &raddr)
+
+            //pc, _ := net.Dial("udp", net.JoinHostPort(ip, "6121"))
             fmt.Println("contacting " + net.JoinHostPort(ip, "6121") + " ...")
             peerToConn[ip] = pc
 
@@ -367,7 +372,7 @@ func seedToPeers(songFile string) {
             // ARQ requests to the peer until we set its net.Conn to nil
             go func() {
                 defer wg.Done()
-                for peerToConn[peer] != nil {
+                for peerToConn[ip] != nil {
                     pc.Write([]byte("request:" + songFile))
                     time.Sleep(500 * time.Microsecond)
                 }
@@ -376,7 +381,7 @@ func seedToPeers(songFile string) {
     }
 
     wg.Wait()
-
+    fmt.Println(seedees)
     // Done our job in stream graph; make rpc to tracker?
     // Or have ping have us move forward
     // TODO:
