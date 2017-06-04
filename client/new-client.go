@@ -39,6 +39,7 @@ var alreadySeeding bool     // prevent tracker rpc from being over called
 // Seeder's data structures
 var peerToConn map[string]bool
 var seedees []string
+var currentSong string
 
 var maxSeedees int
 
@@ -74,6 +75,7 @@ func main() {
     connectedToTracker = false
     isSeeder = false
     alreadySeeding = false
+    currentSong = ""
 
     // Start the shell
     fmt.Print(
@@ -145,8 +147,9 @@ func handleJoin(input string) {
         // Start seeding
         alreadySeeding = true
         isSeeder = true
+        currentSong = args.Res
         // TODO: set alreadyseeding to false once a done rpc is issued to the tracker
-        go seedToPeers(args.Res)
+        go seedToPeers(currentSong)
         return nil
     })
 
@@ -273,29 +276,34 @@ func listenForPeers() {
             log.Fatal("error when reading packet")
             return
         }
+
         s := string(buffer[:n])
         substrs := strings.Split(s, ":")
-        ip, port, _ := net.SplitHostPort(addr.String())
+        ip, _, _ := net.SplitHostPort(addr.String())
         //dest := net.JoinHostPort(ip, "6121")
-        fmt.Println(ip)
-        fmt.Println(port)
-        fmt.Println(s)
-        //raddr := net.UDPAddr{IP: net.ParseIP(ip), Port: 6121}
+        //fmt.Println(ip)
+        //fmt.Println(port)
+        //fmt.Println(s)
+        raddr := net.UDPAddr{IP: net.ParseIP(ip), Port: 6121}
 
         // Process the packet and handle
         switch substrs[0] {
         case "request": // where this client is a non-seeder
+            if currentSong == "" {
+                currentSong = substrs[1]
+            }
+
             if isSeeder || hasSongLocally(substrs[1]) {
                 go func() {
-                    for i := 0; i < 10; i++ { // redundancy
-                        packetConn.WriteTo([]byte("reject"), addr)
+                    for i := 0; i < 3; i++ { // redundancy
+                        packetConn.WriteTo([]byte("reject"), &raddr)
                         time.Sleep(500 * time.Microsecond)
                     }
                 }()
             } else {
                 go func() {
-                    for i := 0; i < 10; i++ { // redundancy
-                        packetConn.WriteTo([]byte("accept"), addr)
+                    for i := 0; i < 3; i++ { // redundancy
+                        packetConn.WriteTo([]byte("accept"), &raddr)
                         time.Sleep(500 * time.Microsecond)
                     }
                 }()
@@ -303,38 +311,34 @@ func listenForPeers() {
         case "confirm": // where this client is a non-seeder
             if isSeeder {
                 go func() {
-                    for i := 0; i < 10; i++ { // redundancy
-                        packetConn.WriteTo([]byte("reject"), addr)
+                    for i := 0; i < 3; i++ { // redundancy
+                        packetConn.WriteTo([]byte("reject"), &raddr)
                         time.Sleep(500 * time.Microsecond)
                     }
                 }()
             } else {
                 // Set this to false after the song finishes playing
                 isSeeder = true
-                go seedToPeers(substrs[1])
+                go seedToPeers(currentSong)
             }
         case "accept": // where this client is a seeder
             if isSeeder && len(seedees) < maxSeedees {
                 ip, _, _ := net.SplitHostPort(addr.String())
                 seedees = append(seedees, ip)
                 go func() {
-                    for i := 0; i < 10; i++ { // redundancy
-                        packetConn.WriteTo([]byte("confirm"), addr)
+                    for i := 0; i < 3; i++ { // redundancy
+                        packetConn.WriteTo([]byte("confirm"), &raddr)
                         time.Sleep(500 * time.Microsecond)
                     }
                 }()
-                //peerToConn[ip].Close()
                 peerToConn[ip] = true
             } else if isSeeder && len(seedees) >= maxSeedees {
-                //peerToConn[ip].Close()
                 peerToConn[ip] = true
             } else {
-                // is a non-seeder; shouldn't get here
+                // is a non-seeder; shouldn't get here; sanity check
                 log.Fatal("non-seeder tried to accept other non-seeder")
             }
         case "reject": // where this client is a seeder
-            // Clean up our connection to this peer
-            //peerToConn[ip].Close()
             peerToConn[ip] = true
         }
     }
@@ -351,7 +355,6 @@ func seedToPeers(songFile string) {
     client.Call("list-peers", proto.ClientCmdMsg{""}, &peers)
 
     peerToConn = make(map[string]bool)
-    seedees = make([]string, 0)
 
     // Loop to acquire udp connections to all other peers
     for _, peer := range peers.Res {
@@ -359,18 +362,20 @@ func seedToPeers(songFile string) {
 
         if ip != publicIp { // check not this client
             // Connect to an available peer
-            laddr := net.UDPAddr{IP: net.ParseIP(publicIp), Port: 6121}
-	        raddr := net.UDPAddr{IP: net.ParseIP(ip), Port: 6121}
-
-	        pc, _ := net.DialUDP("udp", &laddr, &raddr)
-
-            //pc, _ := net.Dial("udp", net.JoinHostPort(ip, "6121"))
+            pc, _ := net.Dial("udp", net.JoinHostPort(ip, "6121"))
             fmt.Println("contacting " + net.JoinHostPort(ip, "6121") + " ...")
             peerToConn[ip] = false
 
             wg.Add(1)
             // ARQ requests to the peer until we set its net.Conn to nil
-            go sendSeedRequests(pc, &wg, ip, songFile)
+            go func() {
+                defer wg.Done()
+                defer pc.Close()
+                for !peerToConn[ip] {
+                    pc.Write([]byte("request:" + songFile))
+                    time.Sleep(500 * time.Microsecond)
+                }
+            }()
         }
     }
 
@@ -380,15 +385,6 @@ func seedToPeers(songFile string) {
     // Or have ping have us move forward
     // TODO:
     fmt.Println("This client is ready to play!")
-}
-
-func sendSeedRequests(pc *net.UDPConn, wg *sync.WaitGroup, ip string, songFile string) {
-    defer wg.Done()
-    defer pc.Close()
-    for !peerToConn[ip] {
-        pc.Write([]byte("request:" + songFile))
-        time.Sleep(500 * time.Microsecond)
-    }
 }
 
 func handleStartPlaying() {
