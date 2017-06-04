@@ -14,48 +14,50 @@ import (
     "github.com/cenkalti/rpc2"
 )
 
-// IP -> array of songs
 var peerMap map[string][]string
-// TODO: var liveMap map[string]time.Time
 var songQueue []string
 
 var currSong string
-var currentlyplaying bool  // Is a song playing on clients
 
 // TODO: when all clients in peerMap make rpc to say that they are done with the song
 // notify the next set of seeders to begin seeding
 func main() {
     peerMap   = make(map[string][]string)
     songQueue = make([]string, 0)
-    currentlyplaying = false
+    //currentlyplaying = false
 
     srv := rpc2.NewServer()
 
+    // join the peer network
     srv.Handle("join", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
-        // TODO: set ip to be from client object?
         peerMap[args.Ip] = args.List
-        //fmt.Println("Handling join ...")
         return nil
     })
 
-    srv.Handle("list", func(client *rpc2.Client, args *proto.ClientCmdMsg, reply *proto.TrackerSlice) error {
+    // Return list of songs available to be played
+    srv.Handle("list-songs", func(client *rpc2.Client, args *proto.ClientCmdMsg, reply *proto.TrackerSlice) error {
         reply.Res = getSongList()
-        fmt.Println(getSongList())
-        //fmt.Println("Handling list ...")
         return nil
     })
 
+    // Return list of peers connected to tracker
+    srv.Handle("list-peers", func(client *rpc2.Client, args *proto.ClientCmdMsg, reply *proto.TrackerSlice) error {
+        keys := make([]string, 0, len(peerMap))
+        for k := range peerMap {
+            keys = append(keys, k)
+        }
+        reply.Res = keys
+        return nil
+    })
+
+    // Enqueue song into song queue
     srv.Handle("play", func(client *rpc2.Client, args *proto.ClientCmdMsg, reply *proto.TrackerRes) error {
-      fmt.Println("Got request to play " + args.Arg)
         for _, song := range getSongList() {
             if args.Arg == song {
-                fmt.Println("Enqueued " + song)
                 songQueue = append(songQueue, args.Arg)
                 break
             }
         }
-
-        // TODO: if no song is playing currently, reply to clients with the song to start seeding
 
         return nil
     })
@@ -65,16 +67,9 @@ func main() {
         return nil
     })
 
-    srv.Handle("peers", func(client *rpc2.Client, args *proto.ClientCmdMsg, reply *proto.TrackerSlice) error {
-        //fmt.Println("Handling peers ...")
-        keys := make([]string, 0, len(peerMap))
-        for k := range peerMap {
-            keys = append(keys, k)
-        }
-        reply.Res = keys
-        return nil
-    })
-
+    // Clients ask tracker when they can start seeding and when they can start
+    // playing the buffered mp3 frames
+    // TODO: Synchronization by including a time delay to "start-playing" rpc
     srv.Handle("ping", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
         //fmt.Println("Handling ping from " + args.Ip)
 
@@ -93,7 +88,7 @@ func main() {
         // If no song is currently playing and there is a song ready to be seeded
         // TODO make currentlyplaying a global boolean and toggle it on and off in tracker's
         // play and done handlers respectively
-        if !currentlyplaying && len(songQueue) > 0 {
+        /*if !currentlyplaying && len(songQueue) > 0 {
 
           nextSong := songQueue[0]
           for _, song := range peerMap[args.Ip] {
@@ -109,13 +104,16 @@ func main() {
           // Song not found, this peer needs to listen for seeders
           client.Call("listenForSeeders", proto.ListenForSeedersPacket{}, nil)
         }
-        // TODO update livemap
+        // TODO update livemap*/
         return nil
     })
 
+
+
+
+    // Notify the tracker that the client is done playing the audio for the mp3
     srv.Handle("done", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
         // TODO: rpc for client to say song is done playing
-        // currSong = ""
         return nil
     })
 

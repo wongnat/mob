@@ -31,9 +31,10 @@ var publicIp string
 var udpHandshaker *net.UDPConn
 var udpMp3Framer  *net.UDPConn
 
-var needsSeeder bool
-var alreadylistening bool
-var alreadyseeding bool
+var readyToPlayMusic bool
+var needsSeeder bool // tells us if we have access to the mp3 or not
+//var alreadylistening bool
+//var alreadyseeding bool
 
 var mu sync.Mutex
 
@@ -167,14 +168,10 @@ func handleJoin(input string) {
 
     go client.Run()
     go handlePing()
-    // go listenForSeeders(publicIp)
 
-    //addr := strings.Split(conn.LocalAddr().String(), ":")[0]
+    // This seems wrong
     _, port, _ := net.SplitHostPort(conn.LocalAddr().String())
     client.Call("join", proto.ClientInfoMsg{net.JoinHostPort(publicIp, port), getSongNames()}, nil)
-    //client.Call("peers", proto.ClientCmdMsg{""}, &res)
-    //peers = res.Res
-    //fmt.Println(peers)
 }
 
 func handleLeave() {
@@ -226,9 +223,7 @@ func handlePing() {
     for {
         var res proto.TrackerRes
         client.Call("ping", proto.ClientInfoMsg{net.JoinHostPort(publicIp, port), nil}, &res)
-        // if res.Res != "" {
-        //     go seedToPeers(res.Res)
-        // }
+        time.Sleep(2000 * time.Millisecond)
     }
 }
 
@@ -245,58 +240,127 @@ func listenForMp3Frames(publicIp string) {
     //}
 }
 
-// TODO: we want to make listenForSeeders and seedToPeers rpc's for the tracker
-// that will be called in response to a ping rpc
+// Listens for udp request packets from seeders in order to become a seeder
+func listenForSeeders() {
+    // listen to incoming udp packets
+    pc, err := net.ListenPacket("udp", net.JoinHostPort(publicIp, "6121"))
+    if err != nil {
+    	log.Fatal(err)
+    }
+    defer pc.Close()
 
-// TODO: maybe make this an rpc for the tracker, so that we don't have to
-// continuously listen, and instead call it when the next song to be played is
-// ready
-func listenForSeeders(publicIp string) {
-    handshakeAddr := net.UDPAddr{IP: net.ParseIP(publicIp), Port: 6121,}
-    udpHandshaker, _ = net.ListenUDP("udp", &handshakeAddr)
+    // loop continuously until we get the go ahead from the tracker to start
+    // playing music.
+    for !readyToPlayMusic {
+        // Read a request to seed from a seeder
+        buffer := make([]byte, 1024)
+        n, addr, _ := pc.ReadFrom(buffer)
+        s := string(byteArray[:n])
 
-    peerMap := make(map[string]bool)
-
-    // Listen for handshakes
-    for {
-        // Read a seeder request
-        buf := make([]byte, 1024)
-        _, addr, _ := udpHandshaker.ReadFromUDP(buf)
-
-        var tmpBuf *bytes.Reader
-        res := proto.HandshakePacket{}
-        tmpBuf = bytes.NewReader(buf)
-        binary.Read(tmpBuf, binary.BigEndian, &res)
-
-        if peerMap[res.Res] {
-          needsSeeder = false
-          udpHandshaker.Close()
-          alreadylistening = false
-          fmt.Println("Confirming a seeder!")
-          break
+        if s == "request" { // sanity check
+            if needsSeeder {
+                pc.WriteTo([]byte("accept"), addr) // become a seeder
+                needsSeeder = false
+            } else {
+                pc.WriteTo([]byte("reject"), addr) // already a seeder
+            }
         }
-
-        peerMap[res.Res] = true
-
-        // Send an ACK
-        var ack proto.HandshakePacket
-        ack = proto.HandshakePacket{"accept"}
-        // if needsSeeder {
-        //     ack = proto.HandshakePacket{"accept"}
-        // } else {
-        //     ack = proto.HandshakePacket{"reject"}
-        // }
-
-        sendBuf := &bytes.Buffer{}
-        binary.Write(sendBuf, binary.BigEndian, &ack)
-
-        udpHandshaker.WriteToUDP(sendBuf.Bytes(), addr)
     }
 }
 
 // udp handshake receive on port 6121
 // udp song receive on port 6122
 func seedToPeers(songFile string) {
+    // Listen for accepts or rejects from the seeders
+    pc, err := net.ListenPacket("udp", net.JoinHostPort(publicIp, "6121"))
+    if err != nil {
+    	log.Fatal(err)
+    }
+    defer pc.Close()
+
+
+
+    //Connect udp
+    conn, err := net.Dial("udp", "host:port")
+    if err != nil {
+    	return err
+    }
+    defer conn.Close()
+
+    //simple Read
+    buffer := make([]byte, 1024)
+    conn.Read(buffer)
+
+    //simple write
+    conn.Write([]byte("Hello from client"))
+
+
+
+
+
+    // get list of peers from tracker
+    client.Call("peers", proto.ClientCmdMsg{""}, &res)
+    peers = res.Res
+
+    var peerToConn map[string]net.Conn  // ip address to a connection
+    peerToConn := make(map[string]net.Conn)
+
+    var peerToResp map[string]string    // ip address to response from peer
+    peerToResp := make(map[string]string)
+
+    // loop to acquire udp connections to all other peers
+    for _, peer := range peers {
+        ip, _, _ := net.SplitHostPort(peer)
+        if ip != publicIp { // check not this client
+            c, _ := net.Dial("udp", net.JoinHostPort(ip, "6121"))
+            peerToConn[peer] = c
+        }
+    }
+
+    // Clean up the udp connections when we're done
+    defer func() {
+        for _, conn := range peerToConn {
+            conn.Close()
+        }
+    }()
+
+    // ARQ udp request packets to peers
+    maxSeedees := 1
+    seedees := make([]string, 0)
+    var gotResFromAllPeers := false
+    go func() {
+
+        // need a list of peers to stop sending to
+        // communicate with
+
+
+        for {
+            for peer, conn := range peerToConn {
+                conn.Write([]byte("request"))
+            }
+
+            time.Sleep(2000 * time.Millisecond) // wait a bit each burst
+        }
+    }()
+
+
+    // exit if all peers have responsed to me
+    for !gotResFromAllPeers { // read responses until we have all our seedees
+        buffer := make([]byte, 1024)
+        n, addr, _ := pc.ReadFrom(buffer)
+        s := string(byteArray[:n])
+
+        switch s {
+        case "accept":
+            peerIp, peerPort, _ := net.SplitHostPort(addr)
+            seedees = append(seedees, peerIp)
+        case "reject":
+
+        }
+    }
+
+
+
     // Handle handshakes
     fmt.Println("Sending to peers")
     req := proto.HandshakePacket{publicIp}
@@ -307,8 +371,7 @@ func seedToPeers(songFile string) {
         log.Println(err)
     }
 
-    var peerToConn map[string]net.Conn  // ip address to a connection
-    peerToConn := make(map[string]net.Conn)
+
 
     var res proto.TrackerSlice
 
