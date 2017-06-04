@@ -65,6 +65,7 @@ func main() {
 
     // Set max number of seedees to our stream to prevent congestion on peers
     maxSeedees = 1
+    seedees = make([]string, 0)
 
     // Start the shell
     fmt.Print(
@@ -197,8 +198,6 @@ func handlePlay(input string) {
     }
 
     client.Call("play", proto.ClientCmdMsg{input}, nil)
-
-    //
 }
 
 func handleHelp() {
@@ -215,16 +214,15 @@ func handleHelp() {
 func handlePing() {
     _, port, _ := net.SplitHostPort(conn.LocalAddr().String())
     for {
-        var res proto.TrackerRes
-        client.Call("ping", proto.ClientInfoMsg{net.JoinHostPort(publicIp, port), nil}, &res)
-        time.Sleep(2000 * time.Millisecond)
+        client.Call("ping", proto.ClientInfoMsg{net.JoinHostPort(publicIp, port), nil}, nil)
+        time.Sleep(500 * time.Millisecond)
     }
 }
 
 // TODO: when song is done playing, set songBuf = songBuf[:0] to clear it
 func listenForMp3Frames(publicIp string) {
-    mp3FrameAddr  := net.UDPAddr{IP: net.ParseIP(publicIp), Port: 6122,}
-    udpMp3Framer, _  = net.ListenUDP("udp", &mp3FrameAddr)
+    //mp3FrameAddr  := net.UDPAddr{IP: net.ParseIP(publicIp), Port: 6122,}
+    //udpMp3Framer, _  = net.ListenUDP("udp", &mp3FrameAddr)
 
     // TODO: add second level seeding!
 
@@ -249,45 +247,55 @@ func listenForPeers() {
     // Eventually after a successful round of handshaking, all peers will
     // be seeders and will block on the next ReadFrom() call until the next
     // round
+    // TODO: may want each case in a goroutine
     for connectedToTracker { // terminate when we leave a tracker
         // Read a packet
         buffer := make([]byte, 1024)
         n, addr, _ := pc.ReadFrom(buffer)
         s := string(byteArray[:n])
+        substrs := strings.Split(s, ":")
 
         // Process the packet and handle
-        switch s {
+        switch substrs[0] {
         case "request": // where this client is a non-seeder
-            if isSeeder {
-                for i := 0; i < 5; i++ { // redundancy
+            if isSeeder || hasSongLocally() {
+                for i := 0; i < 10; i++ { // redundancy
                     pc.WriteTo([]byte("reject"), addr)
+                    time.Sleep(500 * time.Microsecond)
                 }
             } else {
-                for i := 0; i < 5; i++ { // redundancy
+                for i := 0; i < 10; i++ { // redundancy
                     pc.WriteTo([]byte("accept"), addr)
+                    time.Sleep(500 * time.Microsecond)
                 }
             }
         case "confirm": // where this client is a non-seeder
             if isSeeder {
-                for i := 0; i < 5; i++ { // redundancy
+                for i := 0; i < 10; i++ { // redundancy
                     pc.WriteTo([]byte("reject"), addr)
+                    time.Sleep(500 * time.Microsecond)
                 }
             } else {
                 // Set this to false after the song finishes playing
                 isSeeder = true
+                go seedToPeers(substrs[1])
             }
         case "accept": // where this client is a seeder
-            //
-            if isSeeder {
-                for i := 0; i < 5; i++ { // redundancy
+            if isSeeder && len(seedees) < maxSeedees {
+                ip, _, _ := net.SplitHostPort(addr.String())
+                seedees = append(seedees, ip)
+                for i := 0; i < 10; i++ { // redundancy
                     pc.WriteTo([]byte("confirm"), addr)
+                    time.Sleep(500 * time.Microsecond)
                 }
-
+                peerToConn[addr].Close()
+                peerToConn[addr] = nil
+            } else if isSeeder && len(seedees) >= maxSeedees {
                 peerToConn[addr].Close()
                 peerToConn[addr] = nil
             } else {
-                // this shouldn't happen
-                log.Fatal("accept should never be sent to a non-seeder")
+                // is a non-seeder; shouldn't get here
+                log.Fatal("non-seeder tried to accept other non-seeder")
             }
         case "reject": // where this client is a seeder
             // Clean up our connection to this peer
@@ -320,8 +328,8 @@ func seedToPeers(songFile string) {
             // ARQ requests to the peer until we set its net.Conn to nil
             go func() {
                 for peerToConn[peer] != nil {
-                    pc.Write([]byte("request"))
-                    time.Sleep(1000 * time.Millisecond)
+                    pc.Write([]byte("request:" + songFile))
+                    time.Sleep(500 * time.Microsecond)
                 }
             }
         }
@@ -330,6 +338,7 @@ func seedToPeers(songFile string) {
     // Done our job in stream graph; make rpc to tracker?
     // Or have ping have us move forward
     // TODO:
+    fmt.Println("This client is ready to play!")
 }
 
 func handleStartPlaying() {
@@ -363,4 +372,14 @@ func getSongNames() ([]string) {
     })
 
     return songs
+}
+
+func hasSongLocally(songFile string) bool {
+    for _, song := range getSongNames() {
+        if song == songFile {
+            return true
+        }
+    }
+
+    return false
 }

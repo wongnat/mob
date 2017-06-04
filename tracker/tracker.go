@@ -24,6 +24,7 @@ var currSong string
 func main() {
     peerMap   = make(map[string][]string)
     songQueue = make([]string, 0)
+    currSong = ""
     //currentlyplaying = false
 
     srv := rpc2.NewServer()
@@ -67,53 +68,31 @@ func main() {
         return nil
     })
 
+    // Contact peers with the song locally to start seeding
     // Clients ask tracker when they can start seeding and when they can start
     // playing the buffered mp3 frames
     // TODO: Synchronization by including a time delay to "start-playing" rpc
     srv.Handle("ping", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
-        //fmt.Println("Handling ping from " + args.Ip)
-
-        /*if currSong == "" && len(songQueue) > 0 {
-            nextSong := songQueue[0]
-            for _, song := range peerMap[args.Ip] {
-                if song == nextSong {
-                    currSong  = nextSong
-                    songQueue = append(songQueue[:0], songQueue[1:]...)
-                    reply.Res = song
-                    break
-                }
-            }
-        }*/
-
-        // If no song is currently playing and there is a song ready to be seeded
-        // TODO make currentlyplaying a global boolean and toggle it on and off in tracker's
-        // play and done handlers respectively
-        /*if !currentlyplaying && len(songQueue) > 0 {
-
-          nextSong := songQueue[0]
-          for _, song := range peerMap[args.Ip] {
-              if song == nextSong {
-                  currSong  = nextSong
-                  fmt.Println("Contacting seeders to seed to peers ...")
-                  client.Call("seed", proto.SeedToPeersPacket{currSong}, nil)
-                  reply.Res = song
-                  return nil
-              }
-          }
-            fmt.Println("Contacting peers to begin listening for seeders ...")
-          // Song not found, this peer needs to listen for seeders
-          client.Call("listenForSeeders", proto.ListenForSeedersPacket{}, nil)
+        if currSong == "" && len(songQueue) > 0 {
+            currSong = songQueue[0]
+            songQueue = append(songQueue[:0], songQueue[1:]...)
         }
-        // TODO update livemap*/
+
+        for _, song := range peerMap[args.Ip] {
+            if song == currSong {
+                fmt.Println("Contacting peer to begin seeding  ...")
+                client.Call("seed", proto.SeedToPeersPacket{currSong}, nil)
+                return nil
+            }
+        }
+
         return nil
     })
-
-
-
 
     // Notify the tracker that the client is done playing the audio for the mp3
     srv.Handle("done-playing", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
         // TODO: rpc for client to say song is done playing
+        // set currSong = ""
         return nil
     })
 
