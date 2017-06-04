@@ -370,14 +370,7 @@ func seedToPeers(songFile string) {
 
             wg.Add(1)
             // ARQ requests to the peer until we set its net.Conn to nil
-            go func() {
-                defer wg.Done()
-                defer pc.Close()
-                for !peerToConn[ip] {
-                    pc.Write([]byte("request:" + songFile))
-                    time.Sleep(500 * time.Microsecond)
-                }
-            }()
+            go sendSeedRequests(pc, &wg, ip, songFile)
         }
     }
 
@@ -387,6 +380,15 @@ func seedToPeers(songFile string) {
     // Or have ping have us move forward
     // TODO:
     fmt.Println("This client is ready to play!")
+}
+
+func sendSeedRequests(pc *net.UDPConn, wg *sync.WaitGroup, ip string, songFile string) {
+    defer wg.Done()
+    defer pc.Close()
+    for !peerToConn[ip] {
+        pc.Write([]byte("request:" + songFile))
+        time.Sleep(500 * time.Microsecond)
+    }
 }
 
 func handleStartPlaying() {
