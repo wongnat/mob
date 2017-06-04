@@ -80,7 +80,7 @@ func main() {
 
         for _, song := range peerMap[args.Ip] {
             if song == currSong {
-                fmt.Println("Contacting peer to begin seeding  ...")
+                //fmt.Println("Contacting peer to begin seeding  ...")
                 client.Call("seed", proto.TrackerRes{currSong}, nil)
                 return nil
             }
