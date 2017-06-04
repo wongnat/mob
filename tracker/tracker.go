@@ -5,7 +5,7 @@ import (
     "fmt"
     "log"
     "net"
-    "strings"
+    //"strings"
     //"io/ioutil"
     "mob/proto"
     //"encoding/gob"
@@ -20,18 +20,19 @@ var peerMap map[string][]string
 var songQueue []string
 
 var currSong string
-// var playing bool
+var currentlyplaying bool  // Is a song playing on clients
 
 // TODO: when all clients in peerMap make rpc to say that they are done with the song
 // notify the next set of seeders to begin seeding
 func main() {
     peerMap   = make(map[string][]string)
     songQueue = make([]string, 0)
-    //playing = false
+    currentlyplaying = false
 
     srv := rpc2.NewServer()
 
     srv.Handle("join", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
+        // TODO: set ip to be from client object?
         peerMap[args.Ip] = args.List
         //fmt.Println("Handling join ...")
         return nil
@@ -45,8 +46,10 @@ func main() {
     })
 
     srv.Handle("play", func(client *rpc2.Client, args *proto.ClientCmdMsg, reply *proto.TrackerRes) error {
+      fmt.Println("Got request to play " + args.Arg)
         for _, song := range getSongList() {
-            if args.Arg == strings.ToLower(song) {
+            if args.Arg == song {
+                fmt.Println("Enqueued " + song)
                 songQueue = append(songQueue, args.Arg)
                 break
             }
@@ -73,7 +76,9 @@ func main() {
     })
 
     srv.Handle("ping", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
-        if currSong == "" && len(songQueue) > 0 {
+        //fmt.Println("Handling ping from " + args.Ip)
+
+        /*if currSong == "" && len(songQueue) > 0 {
             nextSong := songQueue[0]
             for _, song := range peerMap[args.Ip] {
                 if song == nextSong {
@@ -83,8 +88,28 @@ func main() {
                     break
                 }
             }
-        }
+        }*/
 
+        // If no song is currently playing and there is a song ready to be seeded
+        // TODO make currentlyplaying a global boolean and toggle it on and off in tracker's
+        // play and done handlers respectively
+        if !currentlyplaying && len(songQueue) > 0 {
+
+          nextSong := songQueue[0]
+          for _, song := range peerMap[args.Ip] {
+              if song == nextSong {
+                  currSong  = nextSong
+                  fmt.Println("Contacting seeders to seed to peers ...")
+                  client.Call("seedToPeers", proto.SeedToPeersPacket{currSong}, nil)
+                  reply.Res = song
+                  return nil
+              }
+          }
+            fmt.Println("Contacting peers to begin listening for seeders ...")
+          // Song not found, this peer needs to listen for seeders
+          client.Call("listenForSeeders", proto.ListenForSeedersPacket{}, nil)
+        }
+        // TODO update livemap
         return nil
     })
 

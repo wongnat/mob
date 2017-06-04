@@ -31,6 +31,26 @@ type ClientInfoPacket struct {
     ClientIps []string
 }
 
+type HandshakePacket struct {
+    Res string
+}
+
+type SeedToPeersPacket struct {
+    SongFile string
+}
+
+type SeedToPeersReply struct {
+  // EMPTY
+}
+
+type ListenForSeedersPacket struct {
+  // EMPTY
+}
+
+type ListenForSeedersReply struct {
+  // EMPTY
+}
+
 // More packet types:
 
 
