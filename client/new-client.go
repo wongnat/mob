@@ -20,18 +20,20 @@ import (
     "sync"
 )
 
+// TCP and RPC handlers for the tracker
 var conn net.Conn
 var client *rpc2.Client
 
+// This client's LAN IP address
 var publicIp string
 
-var udpHandshaker *net.UDPConn
-var udpMp3Framer  *net.UDPConn
 
 var connectedToTracker bool
 var readyToPlayMusic bool
 var isSeeder bool // tells us if we have access to the mp3 or not
 var alreadySeeding bool
+
+var peerToConn map[string]net.Conn
 
 var mu sync.Mutex
 
@@ -146,7 +148,7 @@ func handleJoin(input string) {
 
     connectedToTracker = true
 
-    go listenForSeeders()
+    go listenForPeers()
     go handlePing()
 
     _, port, _ := net.SplitHostPort(conn.LocalAddr().String())
@@ -231,9 +233,10 @@ func listenForMp3Frames(publicIp string) {
     //}
 }
 
-// Listens for udp request packets from seeders in order to become a seeder
+// Listens for udp request packets from peers in order to build the stream graph
+// Handles all possible handshake packets that will be sent to this peer.
 // Called in handleJoin when you join a tracker
-func listenForSeeders() {
+func listenForPeers() {
     // listen to incoming udp packets
     pc, err := net.ListenPacket("udp", net.JoinHostPort(publicIp, "6121"))
     if err != nil {
@@ -251,7 +254,7 @@ func listenForSeeders() {
         n, addr, _ := pc.ReadFrom(buffer)
         s := string(byteArray[:n])
 
-        // Process the packet
+        // Process the packet and handle
         switch s {
         case "request":
             if isSeeder {
@@ -266,13 +269,58 @@ func listenForSeeders() {
                 // Set this to false after the song finishes playing
                 isSeeder = true
             }
+        case "accept":
+            if isSeeder {
+                pc.WriteTo([]byte("confirm"), addr)
+            } else {
+                // this shouldn't happen
+            }
+        case "reject":
+            // stop sending to the peer
         }
     }
 }
 
-// Called by tracker rpc, when the next song is played
+// If this client has access to mp3 stream, find peers to stream to.
+// Broadcasts packets to peers until every peer has responded.
+// Called by tracker rpc.
 func seedToPeers(songFile string) {
+    // Get list of peers from tracker
+    client.Call("peers", proto.ClientCmdMsg{""}, &res)
+    peers := res.Res
 
+    peerToConn = make(map[string]net.Conn)
+
+    // Seedee info
+    maxSeedees := 1
+    seedees := make([]string, 0)
+
+    //var peerToResp map[string]string    // ip address to response from peer
+    //peerToResp := make(map[string]string)
+
+    // Loop to acquire udp connections to all other peers
+    for _, peer := range peers {
+        ip, _, _ := net.SplitHostPort(peer)
+        if ip != publicIp { // check not this client
+            // Connect to an available peer
+            c, _ := net.Dial("udp", net.JoinHostPort(ip, "6121"))
+            peerToConn[peer] = c
+
+            // ARQ requests to the peer until we set its net.Conn to nil
+            go func() {
+                for peerToConn[peer] != nil {
+                    c.Write([]byte("request"))
+                }
+            }
+        }
+    }
+
+    // Clean up the udp connections when we're done
+    /*defer func() {
+        for _, conn := range peerToConn {
+            conn.Close()
+        }
+    }()*/
 }
 
 // Returns csv of all song names in the songs folder.
