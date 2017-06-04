@@ -95,7 +95,7 @@ func main() {
               if song == nextSong {
                   currSong  = nextSong
                   fmt.Println("Contacting seeders to seed to peers ...")
-                  client.Call("seedToPeers", proto.SeedToPeersPacket{currSong}, nil)
+                  client.Call("seed", proto.SeedToPeersPacket{currSong}, nil)
                   reply.Res = song
                   return nil
               }
@@ -112,7 +112,7 @@ func main() {
 
 
     // Notify the tracker that the client is done playing the audio for the mp3
-    srv.Handle("done", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
+    srv.Handle("done-playing", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
         // TODO: rpc for client to say song is done playing
         return nil
     })
