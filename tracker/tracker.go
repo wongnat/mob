@@ -15,7 +15,7 @@ var peerMap map[string][]string
 var songQueue []string
 
 var currSong string
-var clientsPlaying uint64
+var clientsPlaying int64
 
 // TODO: when all clients in peerMap make rpc to say that they are done with the song
 // notify the next set of seeders to begin seeding
@@ -71,9 +71,8 @@ func main() {
     // playing the buffered mp3 frames
     // TODO: Synchronization by including a time delay to "start-playing" rpc
     srv.Handle("ping", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
-        // we are still playing a song
-        // TODO: this won't allow clients to join mid-stream
-        if clientsPlaying != 0 {
+        // If there are clients still playing or there is no song to play, do nothing
+        if clientsPlaying != 0 || len(songQueue) == 0 {
             return nil
         }
 
@@ -95,17 +94,18 @@ func main() {
     })
 
     // Notify the tracker that the client ready to start playing the song
-    srv.Handle("ready-to-play", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
+    srv.Handle("ready-to-play", func(client *rpc2.Client, args *proto.ClientCmdMsg, reply *proto.TrackerRes) error {
+        atomic.AddInt64(&clientsPlaying, 1)
         client.Call("start-playing", proto.TrackerRes{""}, nil)
-        atomic.AddUint64(&clientsPlaying, 1)
         return nil
     })
 
     // Notify the tracker that the client is done playing the audio for the mp3
-    srv.Handle("done-playing", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
-        atomic.StoreUint64(&clientsPlaying, clientsPlaying - 1)
-
+    srv.Handle("done-playing", func(client *rpc2.Client, args *proto.ClientCmdMsg, reply *proto.TrackerRes) error {
+        atomic.AddInt64(&clientsPlaying, -1)
+        //log.Println("counter is " + string(clientsPlaying))
         if (clientsPlaying == 0) { // on the last done-playing, we reset the currSong
+            //log.Println("Are we getting here?")
             currSong = ""
         }
 
