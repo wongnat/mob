@@ -8,8 +8,6 @@ import (
     "io/ioutil"
     "fmt"
     "log"
-    //"bytes"
-    //"encoding/binary"
     "strings"
     "path/filepath"
     "net"
@@ -294,8 +292,6 @@ func listenForMp3() {
         log.Fatal(err)
     }
 
-
-
     prebufferedFrames := 1
     currIndex := 0
 
@@ -377,14 +373,14 @@ func listenForPeers() {
             if isSeeder || hasSongLocally(substrs[1]) {
                 //go func() {
                     //for i := 0; i < 3; i++ { // redundancy
-                        packetConn.WriteTo([]byte("reject"), &raddr)
+                packetConn.WriteTo([]byte("reject"), &raddr)
                         //time.Sleep(500 * time.Microsecond)
                     //}
                 //}()
             } else {
                 //go func() {
                     //for i := 0; i < 3; i++ { // redundancy
-                        packetConn.WriteTo([]byte("accept"), &raddr)
+                packetConn.WriteTo([]byte("accept"), &raddr)
                         //time.Sleep(500 * time.Microsecond)
                     //}
                 //}()
@@ -392,15 +388,15 @@ func listenForPeers() {
         case "confirm": // where this client is a non-seeder
             if isSeeder && ip != originSeeder { // if we already confirmed, don't reject a confirm from our origin
                 go func() {
-                    for i := 0; i < 3; i++ { // redundancy
+                    for i := 0; i < 5; i++ { // redundancy
                         packetConn.WriteTo([]byte("reject"), &raddr)
                         time.Sleep(500 * time.Microsecond)
                     }
                 }()
             } else {
-                // Set this to false after the song finishes playing
                 originSeeder = ip
                 isSeeder = true
+                go listenForMp3() // begin listening for incoming mp3 frames
                 go seedToPeers(currentSong)
             }
         case "accept": // where this client is a seeder
@@ -408,7 +404,7 @@ func listenForPeers() {
                 ip, _, _ := net.SplitHostPort(addr.String())
                 seedees = append(seedees, ip)
                 go func() {
-                    for i := 0; i < 3; i++ { // redundancy
+                    for i := 0; i < 5; i++ { // redundancy
                         packetConn.WriteTo([]byte("confirm"), &raddr)
                         time.Sleep(500 * time.Microsecond)
                     }
@@ -500,12 +496,12 @@ func seedToPeers(songFile string) {
            frame_bytes, _ := ioutil.ReadAll(reader)
 
            // Send frame to seedees
-           //go func() {
+           go func() {
                 for _, c := range peerToSeedees {
                      c.Write(frame_bytes)
                      time.Sleep(300 * time.Microsecond)
                 }
-           //}()
+           }()
 
            // Write frame into local songBuf
            for j := 0; j < len(frame_bytes); j++ {
@@ -514,8 +510,6 @@ func seedToPeers(songFile string) {
 
            currIndex = currIndex + len(frame_bytes)
         }
-    } else {
-        go listenForMp3()   // begin listening for incoming mp3 frames
     }
 }
 

@@ -5,11 +5,7 @@ import (
     "fmt"
     "log"
     "net"
-    //"strings"
-    //"io/ioutil"
     "mob/proto"
-    //"encoding/gob"
-    //"github.com/tcolgate/mp3"
     //"time"
     "sync/atomic"
     "github.com/cenkalti/rpc2"
@@ -28,7 +24,6 @@ func main() {
     songQueue = make([]string, 0)
     currSong = ""
     clientsPlaying = 0
-    //currentlyplaying = false
 
     srv := rpc2.NewServer()
 
