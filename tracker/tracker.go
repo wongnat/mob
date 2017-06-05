@@ -19,7 +19,7 @@ var peerMap map[string][]string
 var songQueue []string
 
 var currSong string
-var doneResponses uint64
+var clientsPlaying uint64
 
 // TODO: when all clients in peerMap make rpc to say that they are done with the song
 // notify the next set of seeders to begin seeding
@@ -27,7 +27,7 @@ func main() {
     peerMap   = make(map[string][]string)
     songQueue = make([]string, 0)
     currSong = ""
-    doneResponses = 0
+    clientsPlaying = 0
     //currentlyplaying = false
 
     srv := rpc2.NewServer()
@@ -77,7 +77,8 @@ func main() {
     // TODO: Synchronization by including a time delay to "start-playing" rpc
     srv.Handle("ping", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
         // we are still playing a song
-        if doneResponses != 0 {
+        // TODO: this won't allow clients to join mid-stream
+        if clientsPlaying != 0 {
             return nil
         }
 
@@ -90,9 +91,8 @@ func main() {
         // contact source seeders to start seeding
         for _, song := range peerMap[args.Ip] {
             if song == currSong {
-                //fmt.Println("Contacting peer to begin seeding  ...")
                 client.Call("seed", proto.TrackerRes{currSong}, nil)
-                return nil
+                break
             }
         }
 
@@ -101,16 +101,17 @@ func main() {
 
     // Notify the tracker that the client ready to start playing the song
     srv.Handle("ready-to-play", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
-        // TODO: call rpc on client to play song with SDL
+        client.Call("start-playing", proto.TrackerRes{""}, nil)
+        atomic.AddUint64(&clientsPlaying, 1)
         return nil
     })
 
     // Notify the tracker that the client is done playing the audio for the mp3
     srv.Handle("done-playing", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
-        atomic.AddUint64(&doneResponses, 1)
+        atomic.StoreUint64(&clientsPlaying, clientsPlaying - 1)
 
-        if doneResponses == len(peerMap) {
-            atomic.StoreUint64(&doneResponses, 0)
+        if (clientsPlaying == 0) { // on the last done-playing, we reset the currSong
+            currSong = ""
         }
 
         return nil

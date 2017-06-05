@@ -35,11 +35,6 @@ type HandshakePacket struct {
     Type string // "request", "accept", "reject", "confirm"
 }
 
-// More packet types:
-
-
-// Protocol functions:
-
 // get RTT in terms of milliseconds between current node and specified IP
 func GetRTTBetweenNodes(address string) int64 {
     pinger, err := ping.NewPinger(address[0:9])
@@ -52,9 +47,3 @@ func GetRTTBetweenNodes(address string) int64 {
     stats := pinger.Statistics()
     return int64(stats.MinRtt / time.Millisecond)
 }
-
-// TODO: 3-way handshake protocol to set up streaming dependencies
-// 1) clients broadcast udp packet to all other clients
-// 2) if client doesn't have a seeder already, they will ACK received udp packet
-// 3) seeder client will ACK seedee's original ACK to notify that it is being
-//    seeded to. The seedee will set a boolean when they know they are being seeded to.
