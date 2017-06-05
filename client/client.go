@@ -252,8 +252,20 @@ func handleStartPlaying() {
 
 func handleDonePlaying() {
     // reset globals
+    if !isSourceSeeder {
+        mp3Conn.Close()
+    }
+
+    seedees = make([]string, 0)
+    peerToConn = make(map[string]bool)
+    peerToSeedees = make(map[string]net.Conn)
+    isSeeder = false
+    isSourceSeeder = false
+    alreadySeeding = false
+    currentSong = ""
 
     // make rpc call to tracker
+
 }
 
 // Call this if we're not a source seeder (has song locally) after we set our seedees
@@ -267,27 +279,32 @@ func listenForMp3(publicIp string) {
 
     buf := make([]byte, 2048)
 
-    i := 1
+    prebufferedFrames := 1
     currIndex := 0
+
     // Continously listen mp3 packets while connected to tracker
     for connectedToTracker { // terminate when we leave a tracker
-        if i == 300 { // pre-buffered 200 frames before playing
-            // send rpc
+        if prebufferedFrames == 300 { // pre-buffered 200 frames before playing
+            // send rpc to start playing
         }
 
         // Read a packet
-        n, _, _ := packetConn.ReadFrom(buf) // block here
-        for s, c := range peerToSeedees {
+        n, _, err := packetConn.ReadFrom(buf) // block here
+        if err != nil {
+            break // this will happen when we close mp3Conn
+        }
+
+        for _, c := range peerToSeedees {
             c.Write(buf)
             time.Sleep(300 * time.Microsecond)
         }
 
-        for j := 0; j < n; j++ {
-            songBuf[currIndex + j] = buf[j]
+        for i := 0; i < n; i++ {
+            songBuf[currIndex + i] = buf[i]
             currIndex = currIndex + n
         }
 
-        i++
+        prebufferedFrames++
     }
 }
 

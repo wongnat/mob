@@ -11,6 +11,7 @@ import (
     //"encoding/gob"
     //"github.com/tcolgate/mp3"
     //"time"
+    "sync/atomic"
     "github.com/cenkalti/rpc2"
 )
 
@@ -18,6 +19,7 @@ var peerMap map[string][]string
 var songQueue []string
 
 var currSong string
+var doneResponses uint64
 
 // TODO: when all clients in peerMap make rpc to say that they are done with the song
 // notify the next set of seeders to begin seeding
@@ -25,6 +27,7 @@ func main() {
     peerMap   = make(map[string][]string)
     songQueue = make([]string, 0)
     currSong = ""
+    doneResponses = 0
     //currentlyplaying = false
 
     srv := rpc2.NewServer()
@@ -73,11 +76,18 @@ func main() {
     // playing the buffered mp3 frames
     // TODO: Synchronization by including a time delay to "start-playing" rpc
     srv.Handle("ping", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
+        // we are still playing a song
+        if doneResponses != 0 {
+            return nil
+        }
+
+        // not playing a song; set currSong if not already set
         if currSong == "" && len(songQueue) > 0 {
             currSong = songQueue[0]
             songQueue = append(songQueue[:0], songQueue[1:]...)
         }
 
+        // contact source seeders to start seeding
         for _, song := range peerMap[args.Ip] {
             if song == currSong {
                 //fmt.Println("Contacting peer to begin seeding  ...")
@@ -97,7 +107,12 @@ func main() {
 
     // Notify the tracker that the client is done playing the audio for the mp3
     srv.Handle("done-playing", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
-        // set currSong = ""
+        atomic.AddUint64(&doneResponses, 1)
+
+        if doneResponses == len(peerMap) {
+            atomic.StoreUint64(&doneResponses, 0)
+        }
+
         return nil
     })
 
