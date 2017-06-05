@@ -32,23 +32,7 @@ type ClientInfoPacket struct {
 }
 
 type HandshakePacket struct {
-    Res string
-}
-
-type SeedToPeersPacket struct {
-    SongFile string
-}
-
-type SeedToPeersReply struct {
-  // EMPTY
-}
-
-type ListenForSeedersPacket struct {
-  // EMPTY
-}
-
-type ListenForSeedersReply struct {
-  // EMPTY
+    Type string // "request", "accept", "reject", "confirm"
 }
 
 // More packet types:
