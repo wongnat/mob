@@ -89,9 +89,14 @@ func main() {
         return nil
     })
 
+    // Notify the tracker that the client ready to start playing the song
+    srv.Handle("ready-to-play", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
+        // TODO: call rpc on client to play song with SDL
+        return nil
+    })
+
     // Notify the tracker that the client is done playing the audio for the mp3
     srv.Handle("done-playing", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
-        // TODO: rpc for client to say song is done playing
         // set currSong = ""
         return nil
     })
