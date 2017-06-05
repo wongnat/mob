@@ -41,6 +41,7 @@ var publicIp string
 var connectedToTracker bool // did join a tracker
 var isSeeder bool           // tells us if we have access to the mp3 or not
 var alreadySeeding bool     // prevent tracker rpc from being over called
+var alreadyListeningForMp3 bool
 var isSourceSeeder bool
 // Seeder's data structures
 var peerToConn map[string]bool
@@ -87,6 +88,7 @@ func main() {
     isSeeder = false
     isSourceSeeder = false
     alreadySeeding = false
+    alreadyListeningForMp3 = false
     currentSong = ""
 
     // Start the shell
@@ -162,6 +164,16 @@ func handleJoin(input string) {
         isSourceSeeder = true
         currentSong = args.Res
         go seedToPeers(currentSong)
+        return nil
+    })
+
+    client.Handle("listen-for-mp3", func(client *rpc2.Client, args *proto.TrackerRes, reply *proto.HandshakePacket) error {
+        if (alreadyListeningForMp3) {
+          return nil
+        }
+
+        alreadyListeningForMp3 = true
+        go listenForMp3()
         return nil
     })
 
@@ -311,6 +323,7 @@ func listenForMp3() {
     prebufferedFrames := 1
     currIndex := 0
 
+    fmt.Println("Listening for mp3 packets")
     // Continously listen mp3 packets while connected to tracker
     for connectedToTracker { // terminate when we leave a tracker
         if prebufferedFrames == 300 { // pre-buffered 200 frames before playing
@@ -321,7 +334,7 @@ func listenForMp3() {
         buf := make([]byte, 2048)
 
         // Read a packet
-        n, _, err := packetConn.ReadFrom(buf) // block here
+        n, _, err := mp3Conn.ReadFrom(buf) // block here
         if err != nil {
             break // this will happen when we close mp3Conn
         }
@@ -480,9 +493,9 @@ func seedToPeers(songFile string) {
     }
 
     wg.Wait()
-    //fmt.Println(seedees)
+    fmt.Println(seedees)
 
-    //fmt.Println("This client is ready to play!")
+    fmt.Println("This client is ready to play!")
 
     // Dial seedees mp3 port
     for _, seedee := range seedees {
@@ -490,10 +503,10 @@ func seedToPeers(songFile string) {
         peerToSeedees[seedee] = c
     }
 
-    if !isSourceSeeder {
-        go listenForMp3() // begin listening for incoming mp3 frames
-        return
-    }
+    //if !isSourceSeeder {
+    //    go listenForMp3() // begin listening for incoming mp3 frames
+    //    return
+    //}
 
     if isSourceSeeder {
         //fmt.Println("Opening the song file ...")
@@ -523,12 +536,12 @@ func seedToPeers(songFile string) {
            frame_bytes, _ := ioutil.ReadAll(reader)
 
            // Send frame to seedees
-           go func() {
+          // go func() {
                 for _, c := range peerToSeedees {
                      c.Write(frame_bytes)
                      time.Sleep(300 * time.Microsecond)
                 }
-           }()
+          // }()
 
            // Write frame into local songBuf
            //fmt.Println("wrote a frame to the buffer")

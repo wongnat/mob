@@ -86,9 +86,11 @@ func main() {
         for _, song := range peerMap[args.Ip] {
             if song == currSong {
                 client.Call("seed", proto.TrackerRes{currSong}, nil)
-                break
+                return nil
             }
         }
+
+        client.Call("listen-for-mp3", proto.TrackerRes{""}, nil)
 
         return nil
     })
