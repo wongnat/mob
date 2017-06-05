@@ -335,6 +335,7 @@ func listenForPeers() {
             }
         case "reject": // where this client is a seeder
             peerToConn[ip] = true
+            // remove this peer from our seedee list if they are there
         }
     }
 }
