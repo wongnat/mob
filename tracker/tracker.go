@@ -6,7 +6,7 @@ import (
     "log"
     "net"
     "mob/proto"
-    //"time"
+    "time"
     "sync/atomic"
     //"sync"
     "github.com/cenkalti/rpc2"
@@ -17,8 +17,7 @@ var songQueue []string
 
 var currSong string
 var clientsPlaying int64
-
-//var mu sync.Mutex
+var doneResponses int64
 
 // TODO: when all clients in peerMap make rpc to say that they are done with the song
 // notify the next set of seeders to begin seeding
@@ -27,6 +26,7 @@ func main() {
     songQueue = make([]string, 0)
     currSong = ""
     clientsPlaying = 0
+    doneResponses = 0
 
     srv := rpc2.NewServer()
 
@@ -67,6 +67,7 @@ func main() {
 
     srv.Handle("leave", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
         delete(peerMap, args.Ip)
+        fmt.Println("Removing client " + args.Ip)
         return nil
     })
 
@@ -75,15 +76,13 @@ func main() {
     // playing the buffered mp3 frames
     // TODO: Synchronization by including a time delay to "start-playing" rpc
     srv.Handle("ping", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
-        // If there are clients still playing or there is no song to play, do nothing
-        //if (currSong != "" && clientsPlaying != 0)  || len(songQueue) == 0 {
+        //if clientsPlaying != 0 {
         //    return nil
         //}
-        //if len(songQueue) == 0 {
-        //    return nil
-        //}
-        //mu.Lock()
-        //defer mu.Unlock()
+        if doneResponses != 0 {
+            return nil
+        }
+
         // not playing a song; set currSong if not already set
         if currSong == "" && len(songQueue) > 0 {
             currSong = songQueue[0]
@@ -91,6 +90,7 @@ func main() {
 
         // Dispatch call to seeder or call to non-seeder
         if currSong != "" {
+            //fmt.Println("next song to play is " + currSong)
             // contact source seeders to start seeding
             for _, song := range peerMap[args.Ip] {
                 if song == currSong {
@@ -99,6 +99,7 @@ func main() {
                 }
             }
 
+            //fmt.Println("Why are we getting here!")
             // contact non-source-seeders to listen for mp3 packets
             client.Call("listen-for-mp3", proto.TrackerRes{""}, nil)
         }
@@ -108,20 +109,25 @@ func main() {
 
     // Notify the tracker that the client ready to start playing the song
     srv.Handle("ready-to-play", func(client *rpc2.Client, args *proto.ClientCmdMsg, reply *proto.TrackerRes) error {
+        //fmt.Println("A client is ready to play!")
         atomic.AddInt64(&clientsPlaying, 1)
-        client.Call("start-playing", proto.TrackerRes{""}, nil)
+        // block until everyone is ready
+        for clientsPlaying != int64(len(peerMap)) {}
+        t := time.Now().Add(5 * time.Second)
+        client.Call("start-playing", proto.TimePacket{t}, nil)
         return nil
     })
 
     // Notify the tracker that the client is done playing the audio for the mp3
     srv.Handle("done-playing", func(client *rpc2.Client, args *proto.ClientCmdMsg, reply *proto.TrackerRes) error {
         atomic.AddInt64(&clientsPlaying, -1)
-        //log.Println("counter is " + string(clientsPlaying))
-        if (clientsPlaying == 0) { // on the last done-playing, we reset the currSong
-            //log.Println("Are we getting here?")
+        atomic.AddInt64(&doneResponses, 1)
+        log.Println("Done response from a client!")
+        if clientsPlaying == 0 { // on the last done-playing, we reset the currSong
+            //log.Println("Start to play the next song")
             songQueue = append(songQueue[:0], songQueue[1:]...)
             currSong = ""
-
+            doneResponses = 0
         }
 
         return nil
@@ -134,7 +140,7 @@ func main() {
 
     ip, ipErr := proto.GetLocalIp()
     if ipErr != nil {
-        log.Fatal("Could not resolve local ip address")
+        log.Fatal("Error: not connected to the internet.")
         os.Exit(1)
     }
 
@@ -145,7 +151,6 @@ func main() {
     }
 }
 
-// TODO: maybe return unique song list
 func getSongList() ([]string) {
     var songs []string
 
@@ -158,5 +163,15 @@ func getSongList() ([]string) {
         songs = append(songs, peerMap[keys[i]]...)
     }
 
-    return songs
+    encountered := map[string]bool{}
+    result := []string{}
+
+    for i, _ := range songs {
+        if !encountered[songs[i]] {
+            encountered[songs[i]] = true
+            result = append(result, songs[i])
+        }
+    }
+
+    return result
 }
