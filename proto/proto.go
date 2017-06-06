@@ -3,6 +3,7 @@ package proto
 import (
     "github.com/sparrc/go-ping"
     "time"
+    "net"
 )
 
 type ClientInfoMsg struct {
@@ -35,10 +36,21 @@ type HandshakePacket struct {
     Type string // "request", "accept", "reject", "confirm"
 }
 
-// More packet types:
+func GetLocalIp() (string, error) {
+    conn, err1 := net.Dial("udp", "www.google.com:80")
+    if err1 != nil {
+        return "", err1
+    }
 
+    defer conn.Close()
 
-// Protocol functions:
+    ip, _, err2 := net.SplitHostPort(conn.LocalAddr().String())
+    if err2 != nil {
+        return "", err2
+    }
+
+    return ip, nil
+}
 
 // get RTT in terms of milliseconds between current node and specified IP
 func GetRTTBetweenNodes(address string) int64 {
@@ -52,9 +64,3 @@ func GetRTTBetweenNodes(address string) int64 {
     stats := pinger.Statistics()
     return int64(stats.MinRtt / time.Millisecond)
 }
-
-// TODO: 3-way handshake protocol to set up streaming dependencies
-// 1) clients broadcast udp packet to all other clients
-// 2) if client doesn't have a seeder already, they will ACK received udp packet
-// 3) seeder client will ACK seedee's original ACK to notify that it is being
-//    seeded to. The seedee will set a boolean when they know they are being seeded to.

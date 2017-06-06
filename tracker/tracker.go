@@ -5,12 +5,10 @@ import (
     "fmt"
     "log"
     "net"
-    //"strings"
-    //"io/ioutil"
     "mob/proto"
-    //"encoding/gob"
-    //"github.com/tcolgate/mp3"
     //"time"
+    "sync/atomic"
+    //"sync"
     "github.com/cenkalti/rpc2"
 )
 
@@ -18,6 +16,9 @@ var peerMap map[string][]string
 var songQueue []string
 
 var currSong string
+var clientsPlaying int64
+
+//var mu sync.Mutex
 
 // TODO: when all clients in peerMap make rpc to say that they are done with the song
 // notify the next set of seeders to begin seeding
@@ -25,13 +26,14 @@ func main() {
     peerMap   = make(map[string][]string)
     songQueue = make([]string, 0)
     currSong = ""
-    //currentlyplaying = false
+    clientsPlaying = 0
 
     srv := rpc2.NewServer()
 
     // join the peer network
     srv.Handle("join", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
         peerMap[args.Ip] = args.List
+        fmt.Println("Accepted a new client: " + args.Ip)
         return nil
     })
 
@@ -73,26 +75,55 @@ func main() {
     // playing the buffered mp3 frames
     // TODO: Synchronization by including a time delay to "start-playing" rpc
     srv.Handle("ping", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
+        // If there are clients still playing or there is no song to play, do nothing
+        //if (currSong != "" && clientsPlaying != 0)  || len(songQueue) == 0 {
+        //    return nil
+        //}
+        //if len(songQueue) == 0 {
+        //    return nil
+        //}
+        //mu.Lock()
+        //defer mu.Unlock()
+        // not playing a song; set currSong if not already set
         if currSong == "" && len(songQueue) > 0 {
             currSong = songQueue[0]
-            songQueue = append(songQueue[:0], songQueue[1:]...)
         }
 
-        for _, song := range peerMap[args.Ip] {
-            if song == currSong {
-                //fmt.Println("Contacting peer to begin seeding  ...")
-                client.Call("seed", proto.TrackerRes{currSong}, nil)
-                return nil
+        // Dispatch call to seeder or call to non-seeder
+        if currSong != "" {
+            // contact source seeders to start seeding
+            for _, song := range peerMap[args.Ip] {
+                if song == currSong {
+                    client.Call("seed", proto.TrackerRes{currSong}, nil)
+                    return nil
+                }
             }
+
+            // contact non-source-seeders to listen for mp3 packets
+            client.Call("listen-for-mp3", proto.TrackerRes{""}, nil)
         }
 
         return nil
     })
 
+    // Notify the tracker that the client ready to start playing the song
+    srv.Handle("ready-to-play", func(client *rpc2.Client, args *proto.ClientCmdMsg, reply *proto.TrackerRes) error {
+        atomic.AddInt64(&clientsPlaying, 1)
+        client.Call("start-playing", proto.TrackerRes{""}, nil)
+        return nil
+    })
+
     // Notify the tracker that the client is done playing the audio for the mp3
-    srv.Handle("done-playing", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
-        // TODO: rpc for client to say song is done playing
-        // set currSong = ""
+    srv.Handle("done-playing", func(client *rpc2.Client, args *proto.ClientCmdMsg, reply *proto.TrackerRes) error {
+        atomic.AddInt64(&clientsPlaying, -1)
+        //log.Println("counter is " + string(clientsPlaying))
+        if (clientsPlaying == 0) { // on the last done-playing, we reset the currSong
+            //log.Println("Are we getting here?")
+            songQueue = append(songQueue[:0], songQueue[1:]...)
+            currSong = ""
+
+        }
+
         return nil
     })
 
@@ -101,7 +132,13 @@ func main() {
         log.Println(err)
     }
 
-    fmt.Println("mob tracker listening on port: " + os.Args[1] + " ...")
+    ip, ipErr := proto.GetLocalIp()
+    if ipErr != nil {
+        log.Fatal("Could not resolve local ip address")
+        os.Exit(1)
+    }
+
+    fmt.Println("mob tracker listening on: " + ip + ":" + os.Args[1] + " ...")
 
     for {
         srv.Accept(ln)

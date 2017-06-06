@@ -5,20 +5,25 @@ import (
     "os/signal"
     "syscall"
     "bufio"
+    "io/ioutil"
     "fmt"
     "log"
-    //"bytes"
-    //"encoding/binary"
     "strings"
     "path/filepath"
     "net"
     "mob/proto"
     "mob/client/music"
-    //"github.com/tcolgate/mp3"
+    "github.com/tcolgate/mp3"
     "github.com/cenkalti/rpc2"
+    "github.com/veandco/go-sdl2/sdl"
+	"github.com/veandco/go-sdl2/sdl_mixer"
     "time"
     "sync"
+    "unsafe"
 )
+
+// SDL music ptr
+var m *mix.Music
 
 // TCP and RPC handlers for the tracker
 var conn net.Conn
@@ -26,22 +31,25 @@ var client *rpc2.Client
 
 // UDP handler for handshake packets
 var packetConn net.PacketConn
+var mp3Conn net.PacketConn
 
 // This client's LAN IP address
-// TODO: this is a cmd line arg; want to discover this automatically
 var publicIp string
 
 // Control flags
 var connectedToTracker bool // did join a tracker
 var isSeeder bool           // tells us if we have access to the mp3 or not
 var alreadySeeding bool     // prevent tracker rpc from being over called
-
+var alreadyListeningForMp3 bool
+var isSourceSeeder bool
 // Seeder's data structures
 var peerToConn map[string]bool
 var seedees []string
 var currentSong string
-
+var peerToSeedees map[string]net.Conn
 var maxSeedees int
+
+var originSeeder string
 
 // Assume mp3 is no larger than 50MB. We reuse this buffer for each song we play.
 // Don't need to worry when it gets GCed since we're using it the whole time
@@ -55,9 +63,11 @@ func main() {
     signal.Notify(c, os.Interrupt, syscall.SIGTERM)
     go func() {
         <-c
-        if client != nil {
+        if connectedToTracker {
             handleLeave()
         }
+
+        //music.Quit()
         os.Exit(1)
     }()
 
@@ -66,16 +76,25 @@ func main() {
     defer music.Quit()
 
     // Get our local network IP address
-    publicIp = os.Args[1]
+    var ipErr error
+    publicIp, ipErr = proto.GetLocalIp()
+    if ipErr != nil {
+        log.Fatal("Could not resolve local ip address")
+        os.Exit(1)
+    }
 
     // Set max number of seedees to our stream to prevent congestion on peers
     // TODO: want to reset all these variables when done playing the song
+    m = nil
     maxSeedees = 1
     seedees = make([]string, 0)
     peerToConn = make(map[string]bool)
+    peerToSeedees = make(map[string]net.Conn)
     connectedToTracker = false
     isSeeder = false
+    isSourceSeeder = false
     alreadySeeding = false
+    alreadyListeningForMp3 = false
     currentSong = ""
 
     // Start the shell
@@ -141,40 +160,59 @@ func handleJoin(input string) {
     // Register the rpc handlers for seedToPeers() so that tracker can notify
     // client when to start seeding
     client.Handle("seed", func(client *rpc2.Client, args *proto.TrackerRes, reply *proto.HandshakePacket) error {
-        if (alreadySeeding) {
+        if alreadySeeding {
           return nil
         }
 
         // Start seeding
         alreadySeeding = true
         isSeeder = true
+        isSourceSeeder = true
         currentSong = args.Res
-        // TODO: set alreadyseeding to false once a done rpc is issued to the tracker
         go seedToPeers(currentSong)
         return nil
     })
 
-    client.Handle("start-playing", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
-        // TODO: rpc for client to say song is done playing
-        // currSong = ""
+    client.Handle("listen-for-mp3", func(client *rpc2.Client, args *proto.TrackerRes, reply *proto.HandshakePacket) error {
+        if alreadyListeningForMp3 {
+          return nil
+        }
+
+        alreadyListeningForMp3 = true
+        go listenForMp3()
+        return nil
+    })
+
+    client.Handle("start-playing", func(client *rpc2.Client, args *proto.TrackerRes, reply *proto.HandshakePacket) error {
+        handleStartPlaying()
+        handleDonePlaying()
         return nil
     })
 
     go client.Run()
 
     connectedToTracker = true
-    fmt.Println("Begin listen for peers")
-    go listenForPeers()
-    go handlePing()
+
+    go listenForPeers() // begin handling incoming handshake requests
+    go handlePing()     // begin continuous communication with tracker
 
     _, port, _ := net.SplitHostPort(conn.LocalAddr().String())
     client.Call("join", proto.ClientInfoMsg{net.JoinHostPort(publicIp, port), getSongNames()}, nil)
+    fmt.Println("Joining tracker " + input)
 }
 
 func handleLeave() {
     if !connectedToTracker {
         fmt.Println("Error: not connected to a tracker")
         return
+    }
+
+    if m != nil {
+        m.Free() // stop the music!
+    }
+
+    if currentSong != "" {
+        handleDonePlaying()
     }
 
     connectedToTracker = false
@@ -216,6 +254,7 @@ func handlePlay(input string) {
     }
 
     client.Call("play", proto.ClientCmdMsg{input}, nil)
+    fmt.Println("Enqueued " + input)
 }
 
 func handleHelp() {
@@ -239,11 +278,89 @@ func handlePing() {
     }
 }
 
-// TODO: when song is done playing, set songBuf = songBuf[:0] to clear it
-func listenForMp3Frames(publicIp string) {
-    //mp3FrameAddr  := net.UDPAddr{IP: net.ParseIP(publicIp), Port: 6122,}
-    //udpMp3Framer, _  = net.ListenUDP("udp", &mp3FrameAddr)
+func handleStartPlaying() {
+    //fmt.Println("starting to play ...")
+    ptrToBuf := sdl.RWFromMem(unsafe.Pointer(&(songBuf)[0]), len(songBuf))
+    m, _ = mix.LoadMUS_RW(ptrToBuf, 0)
 
+    m.Play(1)
+    for mix.PlayingMusic() {
+        if !connectedToTracker {
+            return
+        }
+        time.Sleep(10 * time.Millisecond) // cpu friendly
+    }
+    m.Free()
+}
+
+func handleDonePlaying() {
+    // reset globals
+    if !isSourceSeeder { // didn't have the song locally; needed it streamed
+        mp3Conn.Close()
+    }
+
+    seedees = make([]string, 0)
+    peerToConn = make(map[string]bool)
+
+    // clean up connections
+    for _, c := range peerToSeedees {
+        c.Close()
+    }
+
+    m = nil
+    peerToSeedees = make(map[string]net.Conn)
+    isSeeder = false
+    isSourceSeeder = false
+    alreadySeeding = false
+    currentSong = ""
+    originSeeder = ""
+
+    // make rpc call to tracker
+    client.Call("done-playing", proto.ClientCmdMsg{""}, nil)
+}
+
+// Call this if we're not a source seeder (has song locally) after we set our seedees
+func listenForMp3() {
+    // listen to incoming udp packets
+    var err error
+    mp3Conn, err = net.ListenPacket("udp", net.JoinHostPort(publicIp, "6122"))
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    prebufferedFrames := 1
+    currIndex := 0
+
+    //fmt.Println("Listening for mp3 packets")
+    // Continously listen mp3 packets while connected to tracker
+    for connectedToTracker { // terminate when we leave a tracker
+        if prebufferedFrames == 300 { // pre-buffered 200 frames before playing
+            // send rpc to start playing
+            go client.Call("ready-to-play", proto.ClientCmdMsg{""}, nil)
+        }
+
+        buf := make([]byte, 2048)
+
+        // Read a packet
+        n, _, err := mp3Conn.ReadFrom(buf) // block here
+        if err != nil {
+            break // this will happen when we close mp3Conn
+        }
+
+        go func() {
+            for _, c := range peerToSeedees {
+                c.Write(buf)
+                time.Sleep(300 * time.Microsecond)
+            }
+        }()
+
+        for i := 0; i < n; i++ {
+            songBuf[currIndex + i] = buf[i]
+        }
+
+        currIndex = currIndex + n
+        prebufferedFrames++
+    }
 }
 
 // Listens for udp request packets from peers in order to build the stream graph
@@ -251,13 +368,15 @@ func listenForMp3Frames(publicIp string) {
 // Called in handleJoin when you join a tracker
 func listenForPeers() {
     // listen to incoming udp packets
-    fmt.Println("listening for peers!")
+    //fmt.Println("listening for peers!")
     var err error
     packetConn, err = net.ListenPacket("udp", net.JoinHostPort(publicIp, "6121"))
     if err != nil {
         log.Fatal(err)
     }
     //defer pc.Close()
+
+    originSeeder = "" // from where are we getting our mp3?; empty for source seeders
 
     // Continously listen for handshake packets
     // Eventually after a successful round of handshaking, all peers will
@@ -268,8 +387,8 @@ func listenForPeers() {
         buffer := make([]byte, 2048)
         n, addr, e := packetConn.ReadFrom(buffer) // block here
         if e != nil {
-            log.Fatal("error when reading packet")
-            return
+            //log.Fatal("error when reading packet")
+            break
         }
 
         s := string(buffer[:n])
@@ -289,30 +408,34 @@ func listenForPeers() {
             }
 
             if isSeeder || hasSongLocally(substrs[1]) {
-                go func() {
-                    for i := 0; i < 3; i++ { // redundancy
-                        packetConn.WriteTo([]byte("reject"), &raddr)
-                        time.Sleep(500 * time.Microsecond)
-                    }
-                }()
+                //go func() {
+                    //for i := 0; i < 3; i++ { // redundancy
+                packetConn.WriteTo([]byte("reject"), &raddr)
+                        //time.Sleep(500 * time.Microsecond)
+                    //}
+                //}()
             } else {
-                go func() {
-                    for i := 0; i < 3; i++ { // redundancy
-                        packetConn.WriteTo([]byte("accept"), &raddr)
-                        time.Sleep(500 * time.Microsecond)
-                    }
-                }()
+                //go func() {
+                    //for i := 0; i < 3; i++ { // redundancy
+                packetConn.WriteTo([]byte("accept"), &raddr)
+                        //time.Sleep(500 * time.Microsecond)
+                    //}
+                //}()
             }
         case "confirm": // where this client is a non-seeder
-            if isSeeder {
+            if originSeeder != "" && ip != originSeeder {
+                continue
+            }
+
+            if isSeeder { // if we already confirmed, don't reject a confirm from our origin
                 go func() {
-                    for i := 0; i < 3; i++ { // redundancy
+                    for i := 0; i < 5; i++ { // redundancy
                         packetConn.WriteTo([]byte("reject"), &raddr)
                         time.Sleep(500 * time.Microsecond)
                     }
                 }()
             } else {
-                // Set this to false after the song finishes playing
+                originSeeder = ip
                 isSeeder = true
                 go seedToPeers(currentSong)
             }
@@ -321,7 +444,7 @@ func listenForPeers() {
                 ip, _, _ := net.SplitHostPort(addr.String())
                 seedees = append(seedees, ip)
                 go func() {
-                    for i := 0; i < 3; i++ { // redundancy
+                    for i := 0; i < 5; i++ { // redundancy
                         packetConn.WriteTo([]byte("confirm"), &raddr)
                         time.Sleep(500 * time.Microsecond)
                     }
@@ -335,6 +458,13 @@ func listenForPeers() {
             }
         case "reject": // where this client is a seeder
             peerToConn[ip] = true
+            // remove this peer from our seedees list if they are there
+            for i, seedee := range seedees {
+                if seedee == ip {
+                    seedees = append(seedees[:i], seedees[i+1:]...)
+                    break
+                }
+            }
         }
     }
 }
@@ -358,7 +488,7 @@ func seedToPeers(songFile string) {
         if ip != publicIp { // check not this client
             // Connect to an available peer
             pc, _ := net.Dial("udp", net.JoinHostPort(ip, "6121"))
-            fmt.Println("contacting " + net.JoinHostPort(ip, "6121") + " ...")
+            //fmt.Println("contacting " + net.JoinHostPort(ip, "6121") + " ...")
             peerToConn[ip] = false
 
             wg.Add(1)
@@ -375,24 +505,68 @@ func seedToPeers(songFile string) {
     }
 
     wg.Wait()
-    fmt.Println(seedees)
+    //fmt.Println(seedees)
 
-    fmt.Println("This client is ready to play!")
-    // Done our job in stream graph; make rpc to tracker?
-    // Or have ping have us move forward
-    // TODO: make rpc to say ready to play.
-}
+    //fmt.Println("This client is ready to play!")
 
-func handleStartPlaying() {
-    // tracker will call this client rpc on ping when all peers are ready to
-    // play
+    // Dial seedees mp3 port
+    for _, seedee := range seedees {
+        c, _ := net.Dial("udp", net.JoinHostPort(seedee, "6122"))
+        peerToSeedees[seedee] = c
+    }
 
-}
+    //if !isSourceSeeder {
+    //    go listenForMp3() // begin listening for incoming mp3 frames
+    //    return
+    //}
 
-func handleDonePlaying() {
-    // reset globals
+    if isSourceSeeder {
+        //fmt.Println("Opening the song file ...")
+        r, err := os.Open("../songs/" + songFile)
+        if err != nil {
+            log.Fatal(err)
+            return
+        }
 
-    // make rpc call to tracker
+        d := mp3.NewDecoder(r)
+
+        skipped := 0
+        currIndex := 0
+        prebufferedFrames := 0
+        var frame mp3.Frame
+        //fmt.Println("about to send frames")
+        for connectedToTracker {
+            if prebufferedFrames == 300 { // pre-buffered 200 frames before playing
+                // send rpc to start playing
+                go client.Call("ready-to-play", proto.ClientCmdMsg{""}, nil)
+            }
+
+           if err := d.Decode(&frame, &skipped); err != nil {
+               //log.Println("problem decoding frame")
+               break
+           }
+
+           reader := frame.Reader()
+           frame_bytes, _ := ioutil.ReadAll(reader)
+           //fmt.Println(len(frame_bytes))
+           // Send frame to seedees
+          //go func() {
+                for _, c := range peerToSeedees {
+                     c.Write(frame_bytes)
+                     time.Sleep(300 * time.Microsecond)
+                }
+          //}()
+
+           // Write frame into local songBuf
+           //fmt.Println("wrote a frame to the buffer")
+           for j := 0; j < len(frame_bytes); j++ {
+               songBuf[currIndex + j] = frame_bytes[j]
+           }
+
+           currIndex = currIndex + len(frame_bytes)
+           prebufferedFrames++
+        }
+    }
 }
 
 // Returns csv of all song names in the songs folder.
