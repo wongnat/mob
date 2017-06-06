@@ -34,7 +34,6 @@ var packetConn net.PacketConn
 var mp3Conn net.PacketConn
 
 // This client's LAN IP address
-// TODO: this is a cmd line arg; want to discover this automatically
 var publicIp string
 
 // Control flags
@@ -77,7 +76,12 @@ func main() {
     defer music.Quit()
 
     // Get our local network IP address
-    publicIp = os.Args[1]
+    var ipErr error
+    publicIp, ipErr = getLocalIp()
+    if ipErr != nil {
+        log.Fatal("Could not resolve local ip address")
+        os.Exit(1)
+    }
 
     // Set max number of seedees to our stream to prevent congestion on peers
     // TODO: want to reset all these variables when done playing the song
@@ -593,4 +597,20 @@ func hasSongLocally(songFile string) bool {
     }
 
     return false
+}
+
+func getLocalIp() (string, error) {
+    conn, err1 := net.Dial("udp", "www.google.com:80")
+    if err1 != nil {
+        return "", err1
+    }
+
+    defer conn.Close()
+
+    ip, _, err2 := net.SplitHostPort(conn.LocalAddr().String())
+    if err2 != nil {
+        return "", err2
+    }
+
+    return ip, nil
 }
