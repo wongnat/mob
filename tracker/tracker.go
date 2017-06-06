@@ -6,7 +6,7 @@ import (
     "log"
     "net"
     "mob/proto"
-    //"time"
+    "time"
     "sync/atomic"
     //"sync"
     "github.com/cenkalti/rpc2"
@@ -111,7 +111,10 @@ func main() {
     srv.Handle("ready-to-play", func(client *rpc2.Client, args *proto.ClientCmdMsg, reply *proto.TrackerRes) error {
         //fmt.Println("A client is ready to play!")
         atomic.AddInt64(&clientsPlaying, 1)
-        client.Call("start-playing", proto.TrackerRes{""}, nil)
+        // block until everyone is ready
+        for clientsPlaying != int64(len(peerMap)) {}
+        t := time.Now().Add(10 * time.Second)
+        client.Call("start-playing", proto.TimePacket{t}, nil)
         return nil
     })
 

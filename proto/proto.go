@@ -36,6 +36,10 @@ type HandshakePacket struct {
     Type string // "request", "accept", "reject", "confirm"
 }
 
+type TimePacket struct {
+    TimeToPlay time.Time
+}
+
 func GetLocalIp() (string, error) {
     conn, err1 := net.Dial("udp", "www.google.com:80")
     if err1 != nil {
