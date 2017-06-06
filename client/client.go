@@ -49,7 +49,7 @@ var currentSong string
 var peerToSeedees map[string]net.Conn
 var maxSeedees int
 
-var originSeeder string
+//var originSeeder string
 
 // Assume mp3 is no larger than 50MB. We reuse this buffer for each song we play.
 // Don't need to worry when it gets GCed since we're using it the whole time
@@ -96,7 +96,7 @@ func main() {
     alreadySeeding = false
     alreadyListeningForMp3 = false
     currentSong = ""
-    originSeeder = "" // from where are we getting our mp3?; empty for source seeders
+    //originSeeder = "" // from where are we getting our mp3?; empty for source seeders
 
     // Start the shell
     fmt.Print(
@@ -308,7 +308,7 @@ func handleDonePlaying() {
     alreadySeeding = false
     alreadyListeningForMp3 = false
     currentSong = ""
-    originSeeder = ""
+    //originSeeder = ""
 
     // make rpc call to tracker
     client.Call("done-playing", proto.ClientCmdMsg{""}, nil)
@@ -326,6 +326,7 @@ func listenForMp3() {
     prebufferedFrames := 1
     currIndex := 0
 
+    seeder := ""
     fmt.Println("Listening for mp3 packets")
     // Continously listen mp3 packets while connected to tracker
     for connectedToTracker { // terminate when we leave a tracker
@@ -337,9 +338,18 @@ func listenForMp3() {
         buf := make([]byte, 2048)
 
         // Read a packet
-        n, _, err := mp3Conn.ReadFrom(buf) // block here
+        n, addr, err := mp3Conn.ReadFrom(buf) // block here
         if err != nil {
             break // this will happen when we close mp3Conn
+        }
+
+        seederIp, _, _ := net.SplitHostPort(addr.String())
+        if seeder == "" {
+            seeder = seederIp
+        }
+
+        if seederIp != seeder {
+            continue
         }
 
         go func() {
@@ -411,9 +421,9 @@ func listenForPeers() {
                 //}()
             }
         case "confirm": // where this client is a non-seeder
-            if originSeeder != "" && ip != originSeeder {
-                continue
-            }
+            //if originSeeder != "" && ip != originSeeder {
+            //    break
+            //}
 
             if isSeeder { // if we already confirmed, don't reject a confirm from our origin
                 go func() {
@@ -423,7 +433,7 @@ func listenForPeers() {
                     }
                 }()
             } else {
-                originSeeder = ip
+                //originSeeder = ip
                 isSeeder = true
                 go seedToPeers(currentSong)
             }
@@ -447,12 +457,12 @@ func listenForPeers() {
         case "reject": // where this client is a seeder
             peerToConn[ip] = true
             // remove this peer from our seedees list if they are there
-            for i, seedee := range seedees {
+            /*for i, seedee := range seedees {
                 if seedee == ip {
                     seedees = append(seedees[:i], seedees[i+1:]...)
                     break
                 }
-            }
+            }*/
         }
     }
 }
