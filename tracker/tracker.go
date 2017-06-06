@@ -151,7 +151,6 @@ func main() {
     }
 }
 
-// TODO: maybe return unique song list
 func getSongList() ([]string) {
     var songs []string
 
