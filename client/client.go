@@ -31,7 +31,7 @@ var client *rpc2.Client
 
 // UDP handler for handshake packets
 var packetConn net.PacketConn
-//var mp3Conn net.PacketConn
+var mp3Conn net.PacketConn
 
 // This client's LAN IP address
 var publicIp string
@@ -203,7 +203,6 @@ func handleJoin(input string) {
 
 func handleLeave() {
     if !connectedToTracker {
-        //fmt.Println("Error: not connected to a tracker")
         return
     }
 
@@ -288,12 +287,17 @@ func handleStartPlaying() {
 }
 
 func handleDonePlaying() {
+    fmt.Println("I'm done playing " + currentSong)
     m.Free()
     m = nil
 
     // clean up connections
     for _, c := range peerToSeedees {
         c.Close()
+    }
+
+    if !isSourceSeeder {
+        mp3Conn.Close()
     }
 
     peerToSeedees = make(map[string]net.Conn)
@@ -313,11 +317,11 @@ func handleDonePlaying() {
 // Call this if we're not a source seeder (has song locally) after we set our seedees
 func listenForMp3() {
     // listen to incoming udp packets
-    mp3Conn, err := net.ListenPacket("udp", net.JoinHostPort(publicIp, "6122"))
+    var err error
+    mp3Conn, err = net.ListenPacket("udp", net.JoinHostPort(publicIp, "6122"))
     if err != nil {
         log.Fatal(err)
     }
-    defer mp3Conn.Close()
 
     prebufferedFrames := 1
     currIndex := 0
