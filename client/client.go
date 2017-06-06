@@ -42,21 +42,21 @@ var isSeeder bool           // tells us if we have access to the mp3 or not
 var alreadySeeding bool     // prevent tracker rpc from being over called
 var alreadyListeningForMp3 bool
 var isSourceSeeder bool
+
 // Seeder's data structures
+var peerToSeedees map[string]net.Conn
 var peerToConn map[string]bool
 var seedees []string
+
 var currentSong string
-var peerToSeedees map[string]net.Conn
+
 var maxSeedees int
 var mux sync.Mutex
-//var originSeeder string
 
 // Assume mp3 is no larger than 50MB. We reuse this buffer for each song we play.
 // Don't need to worry when it gets GCed since we're using it the whole time
 var songBuf [20 * 1024 * 1024]byte
 
-
-// TODO: clients make rpc to say that they are done with the song
 func main() {
     // Handle kill signal gracefully
     c := make(chan os.Signal, 2)
@@ -84,9 +84,10 @@ func main() {
     }
 
     // Set max number of seedees to our stream to prevent congestion on peers
-    // TODO: want to reset all these variables when done playing the song
-    m = nil
     maxSeedees = 1
+
+    // Init globals
+    m = nil
     seedees = make([]string, 0)
     peerToConn = make(map[string]bool)
     peerToSeedees = make(map[string]net.Conn)
@@ -96,7 +97,6 @@ func main() {
     alreadySeeding = false
     alreadyListeningForMp3 = false
     currentSong = ""
-    //originSeeder = "" // from where are we getting our mp3?; empty for source seeders
 
     // Start the shell
     fmt.Print(
@@ -140,7 +140,6 @@ func main() {
             handleHelp()
         default:     // error message continue
             fmt.Println("Error: not a valid command")
-            //handleHelp()
         }
     }
 }
@@ -187,14 +186,14 @@ func handleJoin(input string) {
     client.Handle("start-playing", func(client *rpc2.Client, args *proto.TimePacket, reply *proto.HandshakePacket) error {
 
         //handleStartPlaying()
-        fmt.Println("Before time to play " + time.Now().String())
+        //fmt.Println("Before time to play " + time.Now().String())
         ptrToBuf := sdl.RWFromMem(unsafe.Pointer(&(songBuf)[0]), cap(songBuf))
         m, _ = mix.LoadMUS_RW(ptrToBuf, 0)
 
-        for time.Now().Before(args.TimeToPlay) {} // block until ready
-        fmt.Println("after time to play " + time.Now().String())
+        //for time.Now().Before(args.TimeToPlay) {} // block until ready
+        //fmt.Println("after time to play " + time.Now().String())
         m.Play(1)
-        fmt.Println("after play " + time.Now().String())
+        //fmt.Println("after play " + time.Now().String())
         for mix.PlayingMusic() {
             //time.Sleep(5 * time.Millisecond) // block; cpu friendly
         }
@@ -288,20 +287,6 @@ func handlePing() {
     }
 }
 
-/*
-func handleStartPlaying() {
-    //fmt.Println("starting to play ...")
-    ptrToBuf := sdl.RWFromMem(unsafe.Pointer(&(songBuf)[0]), cap(songBuf))
-    m, _ = mix.LoadMUS_RW(ptrToBuf, 0)
-
-    m.Play(1)
-    for mix.PlayingMusic() {
-        time.Sleep(5 * time.Millisecond) // block; cpu friendly
-    }
-
-    handleDonePlaying()
-}*/
-
 func handleDonePlaying() {
     fmt.Println("I'm done playing " + currentSong)
     m.Free()
@@ -324,7 +309,6 @@ func handleDonePlaying() {
     alreadySeeding = false
     alreadyListeningForMp3 = false
     currentSong = ""
-    //originSeeder = ""
 
     // make rpc call to tracker
     client.Call("done-playing", proto.ClientCmdMsg{""}, nil)
@@ -368,12 +352,10 @@ func listenForMp3() {
             continue
         }
 
-    //    go func() {
         for _, c := range peerToSeedees {
             c.Write(buf)
             time.Sleep(300 * time.Microsecond)
         }
-        //}()
 
         for i := 0; i < n; i++ {
             songBuf[currIndex + i] = buf[i]
@@ -389,13 +371,11 @@ func listenForMp3() {
 // Called in handleJoin when you join a tracker
 func listenForPeers() {
     // listen to incoming udp packets
-    //fmt.Println("listening for peers!")
     var err error
     packetConn, err = net.ListenPacket("udp", net.JoinHostPort(publicIp, "6121"))
     if err != nil {
         log.Fatal(err)
     }
-    //defer pc.Close()
 
     // Continously listen for handshake packets
     // Eventually after a successful round of handshaking, all peers will
@@ -422,19 +402,9 @@ func listenForPeers() {
             }
 
             if isSeeder || hasSongLocally(substrs[1]) {
-                //go func() {
-                    //for i := 0; i < 3; i++ { // redundancy
                 packetConn.WriteTo([]byte("reject"), &raddr)
-                        //time.Sleep(500 * time.Microsecond)
-                    //}
-                //}()
             } else {
-                //go func() {
-                    //for i := 0; i < 3; i++ { // redundancy
                 packetConn.WriteTo([]byte("accept"), &raddr)
-                        //time.Sleep(500 * time.Microsecond)
-                    //}
-                //}()
             }
         case "confirm": // where this client is a non-seeder
             //if originSeeder != "" && ip != originSeeder {
@@ -508,7 +478,6 @@ func seedToPeers(songFile string) {
         if ip != publicIp { // check not this client
             // Connect to an available peer
             pc, _ := net.Dial("udp", net.JoinHostPort(ip, "6121"))
-            //fmt.Println("contacting " + net.JoinHostPort(ip, "6121") + " ...")
             peerToConn[ip] = false
 
             wg.Add(1)
@@ -564,26 +533,18 @@ func seedToPeers(songFile string) {
             }
 
            if err := d.Decode(&frame, &skipped); err != nil {
-               //log.Println("problem decoding frame")
                break
            }
 
            reader := frame.Reader()
            frame_bytes, _ := ioutil.ReadAll(reader)
 
-
-
-           //fmt.Println(len(frame_bytes))
-           // Send frame to seedees
-         // go func() {
             for _, c := range peerToSeedees {
                  c.Write(frame_bytes)
                  time.Sleep(300 * time.Microsecond)
             }
-         // }()
 
           // Write frame into local songBuf
-          //fmt.Println("wrote a frame to the buffer")
           for j := 0; j < len(frame_bytes); j++ {
               songBuf[currIndex + j] = frame_bytes[j]
           }
