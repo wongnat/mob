@@ -63,9 +63,9 @@ func main() {
     signal.Notify(c, os.Interrupt, syscall.SIGTERM)
     go func() {
         <-c
-        //if connectedToTracker {
+        if connectedToTracker {
             handleLeave()
-        //}
+        }
 
         defer music.Quit()
         os.Exit(1)
@@ -96,6 +96,7 @@ func main() {
     alreadySeeding = false
     alreadyListeningForMp3 = false
     currentSong = ""
+    originSeeder = "" // from where are we getting our mp3?; empty for source seeders
 
     // Start the shell
     fmt.Print(
@@ -278,20 +279,20 @@ func handlePing() {
 }
 
 func handleStartPlaying() {
-    //fmt.Println("starting to play ...")
+    fmt.Println("starting to play ...")
     ptrToBuf := sdl.RWFromMem(unsafe.Pointer(&(songBuf)[0]), cap(songBuf))
     m, _ = mix.LoadMUS_RW(ptrToBuf, 0)
 
     m.Play(1)
     for mix.PlayingMusic() {
-        if !connectedToTracker {
+        if m == nil {
             return
         }
         time.Sleep(5 * time.Millisecond) // cpu friendly
     }
     m.Free() // free our music resource
 
-    if !connectedToTracker {
+    if m == nil {
         return
     }
 
@@ -376,8 +377,6 @@ func listenForPeers() {
         log.Fatal(err)
     }
     //defer pc.Close()
-
-    originSeeder = "" // from where are we getting our mp3?; empty for source seeders
 
     // Continously listen for handshake packets
     // Eventually after a successful round of handshaking, all peers will
@@ -517,7 +516,7 @@ func seedToPeers(songFile string) {
     }
 
     if isSourceSeeder {
-        //fmt.Println("Opening the song file ...")
+        fmt.Println("Opening the song file ...")
         r, err := os.Open("../songs/" + songFile)
         if err != nil {
             log.Fatal(err)
@@ -530,7 +529,7 @@ func seedToPeers(songFile string) {
         currIndex := 0
         prebufferedFrames := 0
         var frame mp3.Frame
-        //fmt.Println("about to send frames")
+        fmt.Println("about to send frames")
         for connectedToTracker {
             if prebufferedFrames == 300 { // pre-buffered 200 frames before playing
                 // send rpc to start playing
@@ -549,12 +548,12 @@ func seedToPeers(songFile string) {
 
            //fmt.Println(len(frame_bytes))
            // Send frame to seedees
-          go func() {
+         // go func() {
             for _, c := range peerToSeedees {
                  c.Write(frame_bytes)
                  time.Sleep(250 * time.Microsecond)
             }
-          }()
+         // }()
 
           // Write frame into local songBuf
           //fmt.Println("wrote a frame to the buffer")

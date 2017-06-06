@@ -65,6 +65,7 @@ func main() {
 
     srv.Handle("leave", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
         delete(peerMap, args.Ip)
+        fmt.Println("Removing client " + args.Ip)
         return nil
     })
 
@@ -89,7 +90,7 @@ func main() {
                 }
             }
 
-            fmt.Println("Why are we getting here!")
+            //fmt.Println("Why are we getting here!")
             // contact non-source-seeders to listen for mp3 packets
             client.Call("listen-for-mp3", proto.TrackerRes{""}, nil)
         }
