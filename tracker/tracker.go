@@ -18,8 +18,6 @@ var songQueue []string
 var currSong string
 var clientsPlaying int64
 
-//var mu sync.Mutex
-
 // TODO: when all clients in peerMap make rpc to say that they are done with the song
 // notify the next set of seeders to begin seeding
 func main() {
@@ -75,15 +73,6 @@ func main() {
     // playing the buffered mp3 frames
     // TODO: Synchronization by including a time delay to "start-playing" rpc
     srv.Handle("ping", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
-        // If there are clients still playing or there is no song to play, do nothing
-        //if (currSong != "" && clientsPlaying != 0)  || len(songQueue) == 0 {
-        //    return nil
-        //}
-        //if len(songQueue) == 0 {
-        //    return nil
-        //}
-        //mu.Lock()
-        //defer mu.Unlock()
         // not playing a song; set currSong if not already set
         if currSong == "" && len(songQueue) > 0 {
             currSong = songQueue[0]
@@ -91,6 +80,7 @@ func main() {
 
         // Dispatch call to seeder or call to non-seeder
         if currSong != "" {
+            fmt.Println("next song to play is " + currSong)
             // contact source seeders to start seeding
             for _, song := range peerMap[args.Ip] {
                 if song == currSong {
@@ -99,6 +89,7 @@ func main() {
                 }
             }
 
+            fmt.Println("Why are we getting here!")
             // contact non-source-seeders to listen for mp3 packets
             client.Call("listen-for-mp3", proto.TrackerRes{""}, nil)
         }
@@ -108,17 +99,20 @@ func main() {
 
     // Notify the tracker that the client ready to start playing the song
     srv.Handle("ready-to-play", func(client *rpc2.Client, args *proto.ClientCmdMsg, reply *proto.TrackerRes) error {
+        fmt.Println("A client is ready to play!")
         atomic.AddInt64(&clientsPlaying, 1)
         client.Call("start-playing", proto.TrackerRes{""}, nil)
+
+
         return nil
     })
 
     // Notify the tracker that the client is done playing the audio for the mp3
     srv.Handle("done-playing", func(client *rpc2.Client, args *proto.ClientCmdMsg, reply *proto.TrackerRes) error {
         atomic.AddInt64(&clientsPlaying, -1)
-        //log.Println("counter is " + string(clientsPlaying))
+        log.Println("Done response from a client!")
         if (clientsPlaying == 0) { // on the last done-playing, we reset the currSong
-            //log.Println("Are we getting here?")
+            log.Println("Start to play the next song")
             songQueue = append(songQueue[:0], songQueue[1:]...)
             currSong = ""
 
@@ -134,7 +128,7 @@ func main() {
 
     ip, ipErr := proto.GetLocalIp()
     if ipErr != nil {
-        log.Fatal("Could not resolve local ip address")
+        log.Fatal("Error: not connected to the internet.")
         os.Exit(1)
     }
 
