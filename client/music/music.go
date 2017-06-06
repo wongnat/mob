@@ -1,38 +1,32 @@
 package music
 
 import (
-    //"fmt"
-    "log"
-    //"unsafe"
-    //"io/ioutil"
-    //"bytes"
-    //"encoding/gob"
+	"log"
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/sdl_mixer"
-    //"github.com/tcolgate/mp3"
 )
 
 func Init() {
-    if err := sdl.Init(sdl.INIT_AUDIO); err != nil {
-    	log.Println(err)
-    	return
-    }
+	if err := sdl.Init(sdl.INIT_AUDIO); err != nil {
+		log.Println(err)
+		return
+	}
 
-    if err := mix.Init(mix.INIT_MP3); err != nil {
-    	log.Println(err)
-    	return
-    }
+	if err := mix.Init(mix.INIT_MP3); err != nil {
+		log.Println(err)
+		return
+	}
 
-    // Default: 22050, mix.DEFAULT_FORMAT, 2, 4096
-    // we want 44.1 kHz/16 bit quality for our songs
-    if err := mix.OpenAudio(44100, mix.DEFAULT_FORMAT, 2, 4096); err != nil {
-        log.Println(err)
-        return
-    }
+	// Default: 22050, mix.DEFAULT_FORMAT, 2, 4096
+	// we want 44.1 kHz/16 bit quality for our songs
+	if err := mix.OpenAudio(44100, mix.DEFAULT_FORMAT, 2, 4096); err != nil {
+		log.Println(err)
+		return
+	}
 }
 
 func Quit() {
-    mix.CloseAudio()
-    mix.Quit()
-    sdl.Quit()
+	mix.CloseAudio()
+	mix.Quit()
+	sdl.Quit()
 }
