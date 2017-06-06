@@ -185,8 +185,18 @@ func handleJoin(input string) {
     })
 
     client.Handle("start-playing", func(client *rpc2.Client, args *proto.TimePacket, reply *proto.HandshakePacket) error {
-        time.AfterFunc(args.TimeToPlay.Sub(time.Now()), handleStartPlaying)
+
         //handleStartPlaying()
+        ptrToBuf := sdl.RWFromMem(unsafe.Pointer(&(songBuf)[0]), cap(songBuf))
+        m, _ = mix.LoadMUS_RW(ptrToBuf, 0)
+
+        for time.Now().Before(args.TimeToPlay) {} // block until ready
+        m.Play(1)
+        for mix.PlayingMusic() {
+            time.Sleep(5 * time.Millisecond) // block; cpu friendly
+        }
+
+        handleDonePlaying()
         return nil
     })
 
@@ -274,8 +284,9 @@ func handlePing() {
     }
 }
 
+/*
 func handleStartPlaying() {
-    fmt.Println("starting to play ...")
+    //fmt.Println("starting to play ...")
     ptrToBuf := sdl.RWFromMem(unsafe.Pointer(&(songBuf)[0]), cap(songBuf))
     m, _ = mix.LoadMUS_RW(ptrToBuf, 0)
 
@@ -285,7 +296,7 @@ func handleStartPlaying() {
     }
 
     handleDonePlaying()
-}
+}*/
 
 func handleDonePlaying() {
     fmt.Println("I'm done playing " + currentSong)

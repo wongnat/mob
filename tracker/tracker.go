@@ -113,7 +113,7 @@ func main() {
         atomic.AddInt64(&clientsPlaying, 1)
         // block until everyone is ready
         for clientsPlaying != int64(len(peerMap)) {}
-        t := time.Now().Add(10 * time.Second)
+        t := time.Now().Add(30 * time.Second)
         client.Call("start-playing", proto.TimePacket{t}, nil)
         return nil
     })
