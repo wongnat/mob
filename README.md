@@ -6,6 +6,7 @@
 |__|_|  /\____/|___  /
       \/           \/
 </pre>
+# Internet Radio 
 
 ## Description
 
@@ -17,8 +18,8 @@ If a song is enqueued and a client does not have it locally, one of
 its peers will stream it to them.
 
 Notes:
-    * Only mp3 is supported
-    * Early build with lots of bugs
+* Only mp3 is supported
+* Only works over local NAT for now
     
 ## Usage
 
@@ -41,9 +42,9 @@ Alternatively,
 
 ## Dependencies
 
-    * [go-SDL2](https://github.com/veandco/go-sdl2) - golang SDL2 bindings to play mp3s
-    * [mp3](https://github.com/tcolgate/mp3) - golang mp3 library to parse mp3 frames
-    * [rpc2](https://github.com/cenkalti/rpc2) - golang rpc library for communication between clients and trackers
+* [go-SDL2](https://github.com/veandco/go-sdl2) - golang SDL2 bindings to play mp3s
+* [mp3](https://github.com/tcolgate/mp3) - golang mp3 library to parse mp3 frames
+* [rpc2](https://github.com/cenkalti/rpc2) - golang rpc library for communication between clients and trackers
 
 ## Platforms
 
@@ -51,10 +52,11 @@ Linux, Mac OSX, Windows
 
 ## TODO
 
-    * Write tests
-    * Allow clients to join and play audio mid-stream
-    * Improve synchronization of audio among clients
-    * Remove tracker and make fully peer-to-peer
+* Write tests
+* Allow clients to join and play audio mid-stream
+* Improve synchronization of audio among clients
+* Remove tracker and make fully peer-to-peer
+* Support other audio file types
 
 ## License
 
