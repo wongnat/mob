@@ -1,12 +1,12 @@
-<pre>
+```
               ___.
   _____   ____\_ |__
  /     \ /  _ \| __ \
 |  Y Y  (  <_> ) \_\ \
 |__|_|  /\____/|___  /
       \/           \/
-</pre>
-# Internet Radio 
+```
+# Internet Radio
 
 ## Description
 
@@ -20,25 +20,37 @@ its peers will stream it to them.
 Notes:
 * Only mp3 is supported
 * Only works over local NAT for now
-    
+
 ## Usage
 
 #### Build
 `make build`
 
 #### Run the client
-`make run-client`
+```
+cd bin
+./client
+```
 
 Alternatively,
 
-`go run client/client.go`
+```
+cd client
+go run client.go
+```
 
 #### Run the tracker
-`make run-tracker`
+```
+cd bin
+./tracker <port>
+```
 
 Alternatively,
 
-`go run tracker/tracker.go <port>`
+```
+cd tracker
+go run tracker.go <port>
+```
 
 ## Dependencies
 
@@ -53,6 +65,7 @@ Linux, Mac OSX, Windows
 ## TODO
 
 * Write tests
+* Fix relative paths to resources
 * Allow clients to join and play audio mid-stream
 * Improve synchronization of audio among clients
 * Remove tracker and make fully peer-to-peer
