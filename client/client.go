@@ -184,8 +184,9 @@ func handleJoin(input string) {
         return nil
     })
 
-    client.Handle("start-playing", func(client *rpc2.Client, args *proto.TrackerRes, reply *proto.HandshakePacket) error {
-        handleStartPlaying()
+    client.Handle("start-playing", func(client *rpc2.Client, args *proto.TimePacket, reply *proto.HandshakePacket) error {
+        time.AfterFunc(args.TimeToPlay.Sub(time.Now()), handleStartPlaying)
+        //handleStartPlaying()
         return nil
     })
 
@@ -352,12 +353,12 @@ func listenForMp3() {
             continue
         }
 
-        go func() {
-            for _, c := range peerToSeedees {
-                c.Write(buf)
-                time.Sleep(300 * time.Microsecond)
-            }
-        }()
+    //    go func() {
+        for _, c := range peerToSeedees {
+            c.Write(buf)
+            time.Sleep(300 * time.Microsecond)
+        }
+        //}()
 
         for i := 0; i < n; i++ {
             songBuf[currIndex + i] = buf[i]
