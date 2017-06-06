@@ -320,7 +320,7 @@ func listenForMp3() {
 	currIndex := 0
 
 	seeder := ""
-	fmt.Println("Listening for mp3 packets")
+
 	// Continously listen mp3 packets while connected to tracker
 	for connectedToTracker { // terminate when we leave a tracker
 		if prebufferedFrames == 300 { // pre-buffered 200 frames before playing
@@ -492,7 +492,6 @@ func seedToPeers(songFile string) {
 	}
 
 	if isSourceSeeder {
-		fmt.Println("Opening the song file ...")
 		r, err := os.Open("../songs/" + songFile)
 		if err != nil {
 			log.Fatal(err)
