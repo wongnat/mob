@@ -50,6 +50,8 @@ var currentSong string
 var peerToSeedees map[string]net.Conn
 var maxSeedees int
 
+var originSeeder string
+
 // Assume mp3 is no larger than 50MB. We reuse this buffer for each song we play.
 // Don't need to worry when it gets GCed since we're using it the whole time
 var songBuf [20 * 1024 * 1024]byte
@@ -154,7 +156,7 @@ func handleJoin(input string) {
     // Register the rpc handlers for seedToPeers() so that tracker can notify
     // client when to start seeding
     client.Handle("seed", func(client *rpc2.Client, args *proto.TrackerRes, reply *proto.HandshakePacket) error {
-        if (alreadySeeding) {
+        if alreadySeeding {
           return nil
         }
 
@@ -168,7 +170,7 @@ func handleJoin(input string) {
     })
 
     client.Handle("listen-for-mp3", func(client *rpc2.Client, args *proto.TrackerRes, reply *proto.HandshakePacket) error {
-        if (alreadyListeningForMp3) {
+        if alreadyListeningForMp3 {
           return nil
         }
 
@@ -273,6 +275,7 @@ func handlePing() {
 }
 
 func handleStartPlaying() {
+    fmt.Println("starting to play ...")
     ptrToBuf := sdl.RWFromMem(unsafe.Pointer(&(songBuf)[0]), len(songBuf))
     m, _ = mix.LoadMUS_RW(ptrToBuf, 0)
 
@@ -306,6 +309,7 @@ func handleDonePlaying() {
     isSourceSeeder = false
     alreadySeeding = false
     currentSong = ""
+    originSeeder = ""
 
     // make rpc call to tracker
     client.Call("done-playing", proto.ClientCmdMsg{""}, nil)
@@ -348,9 +352,9 @@ func listenForMp3() {
 
         for i := 0; i < n; i++ {
             songBuf[currIndex + i] = buf[i]
-            currIndex = currIndex + n
         }
 
+        currIndex = currIndex + n
         prebufferedFrames++
     }
 }
@@ -368,7 +372,7 @@ func listenForPeers() {
     }
     //defer pc.Close()
 
-    originSeeder := "" // from where are we getting our mp3?; empty for source seeders
+    originSeeder = "" // from where are we getting our mp3?; empty for source seeders
 
     // Continously listen for handshake packets
     // Eventually after a successful round of handshaking, all peers will
@@ -415,7 +419,11 @@ func listenForPeers() {
                 //}()
             }
         case "confirm": // where this client is a non-seeder
-            if isSeeder && ip != originSeeder { // if we already confirmed, don't reject a confirm from our origin
+            if originSeeder != "" && ip != originSeeder {
+                continue
+            }
+
+            if isSeeder { // if we already confirmed, don't reject a confirm from our origin
                 go func() {
                     for i := 0; i < 5; i++ { // redundancy
                         packetConn.WriteTo([]byte("reject"), &raddr)
@@ -522,26 +530,28 @@ func seedToPeers(songFile string) {
         currIndex := 0
         prebufferedFrames := 0
         var frame mp3.Frame
-        for {
+        //fmt.Println("about to send frames")
+        for connectedToTracker {
             if prebufferedFrames == 300 { // pre-buffered 200 frames before playing
                 // send rpc to start playing
                 go client.Call("ready-to-play", proto.ClientCmdMsg{""}, nil)
             }
 
            if err := d.Decode(&frame, &skipped); err != nil {
+               //log.Println("problem decoding frame")
                break
            }
 
            reader := frame.Reader()
            frame_bytes, _ := ioutil.ReadAll(reader)
-
+           //fmt.Println(len(frame_bytes))
            // Send frame to seedees
-          // go func() {
+          //go func() {
                 for _, c := range peerToSeedees {
                      c.Write(frame_bytes)
                      time.Sleep(300 * time.Microsecond)
                 }
-          // }()
+          //}()
 
            // Write frame into local songBuf
            //fmt.Println("wrote a frame to the buffer")

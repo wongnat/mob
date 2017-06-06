@@ -8,6 +8,7 @@ import (
     "mob/proto"
     //"time"
     "sync/atomic"
+    //"sync"
     "github.com/cenkalti/rpc2"
 )
 
@@ -16,6 +17,8 @@ var songQueue []string
 
 var currSong string
 var clientsPlaying int64
+
+//var mu sync.Mutex
 
 // TODO: when all clients in peerMap make rpc to say that they are done with the song
 // notify the next set of seeders to begin seeding
@@ -72,25 +75,32 @@ func main() {
     // TODO: Synchronization by including a time delay to "start-playing" rpc
     srv.Handle("ping", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
         // If there are clients still playing or there is no song to play, do nothing
-        if clientsPlaying != 0 || len(songQueue) == 0 {
-            return nil
-        }
-
+        //if (currSong != "" && clientsPlaying != 0)  || len(songQueue) == 0 {
+        //    return nil
+        //}
+        //if len(songQueue) == 0 {
+        //    return nil
+        //}
+        //mu.Lock()
+        //defer mu.Unlock()
         // not playing a song; set currSong if not already set
         if currSong == "" && len(songQueue) > 0 {
             currSong = songQueue[0]
-            songQueue = append(songQueue[:0], songQueue[1:]...)
         }
 
-        // contact source seeders to start seeding
-        for _, song := range peerMap[args.Ip] {
-            if song == currSong {
-                client.Call("seed", proto.TrackerRes{currSong}, nil)
-                return nil
+        // Dispatch call to seeder or call to non-seeder
+        if currSong != "" {
+            // contact source seeders to start seeding
+            for _, song := range peerMap[args.Ip] {
+                if song == currSong {
+                    client.Call("seed", proto.TrackerRes{currSong}, nil)
+                    return nil
+                }
             }
-        }
 
-        client.Call("listen-for-mp3", proto.TrackerRes{""}, nil)
+            // contact non-source-seeders to listen for mp3 packets
+            client.Call("listen-for-mp3", proto.TrackerRes{""}, nil)
+        }
 
         return nil
     })
@@ -108,7 +118,9 @@ func main() {
         //log.Println("counter is " + string(clientsPlaying))
         if (clientsPlaying == 0) { // on the last done-playing, we reset the currSong
             //log.Println("Are we getting here?")
+            songQueue = append(songQueue[:0], songQueue[1:]...)
             currSong = ""
+
         }
 
         return nil
