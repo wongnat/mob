@@ -81,7 +81,7 @@ func main() {
 
         // Dispatch call to seeder or call to non-seeder
         if currSong != "" {
-            fmt.Println("next song to play is " + currSong)
+            //fmt.Println("next song to play is " + currSong)
             // contact source seeders to start seeding
             for _, song := range peerMap[args.Ip] {
                 if song == currSong {
@@ -100,7 +100,7 @@ func main() {
 
     // Notify the tracker that the client ready to start playing the song
     srv.Handle("ready-to-play", func(client *rpc2.Client, args *proto.ClientCmdMsg, reply *proto.TrackerRes) error {
-        fmt.Println("A client is ready to play!")
+        //fmt.Println("A client is ready to play!")
         atomic.AddInt64(&clientsPlaying, 1)
         client.Call("start-playing", proto.TrackerRes{""}, nil)
 
@@ -113,7 +113,7 @@ func main() {
         atomic.AddInt64(&clientsPlaying, -1)
         log.Println("Done response from a client!")
         if (clientsPlaying == 0) { // on the last done-playing, we reset the currSong
-            log.Println("Start to play the next song")
+            //log.Println("Start to play the next song")
             songQueue = append(songQueue[:0], songQueue[1:]...)
             currSong = ""
 

@@ -208,11 +208,7 @@ func handleLeave() {
     }
 
     if m != nil {
-        m.Free() // stop the music!
-    }
-
-    if currentSong != "" {
-        handleDonePlaying()
+        mix.HaltMusic()
     }
 
     client.Call("leave", proto.ClientInfoMsg{trackerConn.LocalAddr().String(), nil}, nil)
@@ -274,7 +270,7 @@ func handlePing() {
     _, port, _ := net.SplitHostPort(trackerConn.LocalAddr().String())
     for connectedToTracker {
         client.Call("ping", proto.ClientInfoMsg{net.JoinHostPort(publicIp, port), nil}, nil)
-        time.Sleep(500 * time.Millisecond)
+        time.Sleep(10 * time.Millisecond)
     }
 }
 
@@ -285,31 +281,24 @@ func handleStartPlaying() {
 
     m.Play(1)
     for mix.PlayingMusic() {
-        if m == nil {
-            return
-        }
-        time.Sleep(5 * time.Millisecond) // cpu friendly
-    }
-    m.Free() // free our music resource
-
-    if m == nil {
-        return
+        time.Sleep(5 * time.Millisecond) // block; cpu friendly
     }
 
     handleDonePlaying()
 }
 
 func handleDonePlaying() {
-    seedees = make([]string, 0)
-    peerToConn = make(map[string]bool)
+    m.Free()
+    m = nil
 
     // clean up connections
     for _, c := range peerToSeedees {
         c.Close()
     }
 
-    m = nil
     peerToSeedees = make(map[string]net.Conn)
+    peerToConn = make(map[string]bool)
+    seedees = make([]string, 0)
     isSeeder = false
     isSourceSeeder = false
     alreadySeeding = false
@@ -352,7 +341,7 @@ func listenForMp3() {
         go func() {
             for _, c := range peerToSeedees {
                 c.Write(buf)
-                time.Sleep(250 * time.Microsecond)
+                time.Sleep(300 * time.Microsecond)
             }
         }()
 
@@ -387,17 +376,12 @@ func listenForPeers() {
         buffer := make([]byte, 2048)
         n, addr, e := packetConn.ReadFrom(buffer) // block here
         if e != nil {
-            //log.Fatal("error when reading packet")
             break
         }
 
         s := string(buffer[:n])
         substrs := strings.Split(s, ":")
         ip, _, _ := net.SplitHostPort(addr.String())
-        //dest := net.JoinHostPort(ip, "6121")
-        //fmt.Println(ip)
-        //fmt.Println(port)
-        //fmt.Println(s)
         raddr := net.UDPAddr{IP: net.ParseIP(ip), Port: 6121}
 
         // Process the packet and handle
@@ -551,7 +535,7 @@ func seedToPeers(songFile string) {
          // go func() {
             for _, c := range peerToSeedees {
                  c.Write(frame_bytes)
-                 time.Sleep(250 * time.Microsecond)
+                 time.Sleep(300 * time.Microsecond)
             }
          // }()
 
