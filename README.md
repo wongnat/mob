@@ -1,11 +1,11 @@
-<pre>
+```
               ___.
   _____   ____\_ |__
  /     \ /  _ \| __ \
 |  Y Y  (  <_> ) \_\ \
 |__|_|  /\____/|___  /
       \/           \/
-</pre>
+```
 # Internet Radio
 
 ## Description
@@ -27,30 +27,30 @@ Notes:
 `make build`
 
 #### Run the client
-`
+```
 cd bin
 ./client
-`
+```
 
 Alternatively,
 
-`
+```
 cd client
 go run client.go
-`
+```
 
 #### Run the tracker
-`
+```
 cd bin
 ./tracker <port>
-`
+```
 
 Alternatively,
 
-`
+```
 cd tracker
 go run tracker.go <port>
-`
+```
 
 ## Dependencies
 
