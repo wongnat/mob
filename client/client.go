@@ -279,7 +279,7 @@ func handlePing() {
 }
 
 func handleStartPlaying() {
-    fmt.Println("starting to play ...")
+    //fmt.Println("starting to play ...")
     ptrToBuf := sdl.RWFromMem(unsafe.Pointer(&(songBuf)[0]), len(songBuf))
     m, _ = mix.LoadMUS_RW(ptrToBuf, 0)
 
@@ -331,7 +331,7 @@ func listenForMp3() {
     prebufferedFrames := 1
     currIndex := 0
 
-    fmt.Println("Listening for mp3 packets")
+    //fmt.Println("Listening for mp3 packets")
     // Continously listen mp3 packets while connected to tracker
     for connectedToTracker { // terminate when we leave a tracker
         if prebufferedFrames == 300 { // pre-buffered 200 frames before playing
@@ -505,9 +505,9 @@ func seedToPeers(songFile string) {
     }
 
     wg.Wait()
-    fmt.Println(seedees)
+    //fmt.Println(seedees)
 
-    fmt.Println("This client is ready to play!")
+    //fmt.Println("This client is ready to play!")
 
     // Dial seedees mp3 port
     for _, seedee := range seedees {
@@ -597,20 +597,4 @@ func hasSongLocally(songFile string) bool {
     }
 
     return false
-}
-
-func getLocalIp() (string, error) {
-    conn, err1 := net.Dial("udp", "www.google.com:80")
-    if err1 != nil {
-        return "", err1
-    }
-
-    defer conn.Close()
-
-    ip, _, err2 := net.SplitHostPort(conn.LocalAddr().String())
-    if err2 != nil {
-        return "", err2
-    }
-
-    return ip, nil
 }
