@@ -3,6 +3,7 @@ package proto
 import (
     "github.com/sparrc/go-ping"
     "time"
+    "net"
 )
 
 type ClientInfoMsg struct {
@@ -33,6 +34,22 @@ type ClientInfoPacket struct {
 
 type HandshakePacket struct {
     Type string // "request", "accept", "reject", "confirm"
+}
+
+func GetLocalIp() (string, error) {
+    conn, err1 := net.Dial("udp", "www.google.com:80")
+    if err1 != nil {
+        return "", err1
+    }
+
+    defer conn.Close()
+
+    ip, _, err2 := net.SplitHostPort(conn.LocalAddr().String())
+    if err2 != nil {
+        return "", err2
+    }
+
+    return ip, nil
 }
 
 // get RTT in terms of milliseconds between current node and specified IP

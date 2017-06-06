@@ -77,7 +77,7 @@ func main() {
 
     // Get our local network IP address
     var ipErr error
-    publicIp, ipErr = getLocalIp()
+    publicIp, ipErr = proto.GetLocalIp()
     if ipErr != nil {
         log.Fatal("Could not resolve local ip address")
         os.Exit(1)

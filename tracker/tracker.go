@@ -33,6 +33,7 @@ func main() {
     // join the peer network
     srv.Handle("join", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
         peerMap[args.Ip] = args.List
+        fmt.Println("Accepted a new client: " + args.Ip)
         return nil
     })
 
@@ -131,7 +132,13 @@ func main() {
         log.Println(err)
     }
 
-    fmt.Println("mob tracker listening on port: " + os.Args[1] + " ...")
+    ip, ipErr := proto.GetLocalIp()
+    if ipErr != nil {
+        log.Fatal("Could not resolve local ip address")
+        os.Exit(1)
+    }
+
+    fmt.Println("mob tracker listening on: " + ip + ":" + os.Args[1] + " ...")
 
     for {
         srv.Accept(ln)
