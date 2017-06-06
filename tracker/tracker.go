@@ -19,8 +19,6 @@ var currSong string
 var clientsPlaying int64
 var doneResponses int64
 
-// TODO: when all clients in peerMap make rpc to say that they are done with the song
-// notify the next set of seeders to begin seeding
 func main() {
     peerMap   = make(map[string][]string)
     songQueue = make([]string, 0)
@@ -74,11 +72,7 @@ func main() {
     // Contact peers with the song locally to start seeding
     // Clients ask tracker when they can start seeding and when they can start
     // playing the buffered mp3 frames
-    // TODO: Synchronization by including a time delay to "start-playing" rpc
     srv.Handle("ping", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
-        //if clientsPlaying != 0 {
-        //    return nil
-        //}
         if doneResponses != 0 {
             return nil
         }
@@ -90,7 +84,6 @@ func main() {
 
         // Dispatch call to seeder or call to non-seeder
         if currSong != "" {
-            //fmt.Println("next song to play is " + currSong)
             // contact source seeders to start seeding
             for _, song := range peerMap[args.Ip] {
                 if song == currSong {
@@ -99,7 +92,6 @@ func main() {
                 }
             }
 
-            //fmt.Println("Why are we getting here!")
             // contact non-source-seeders to listen for mp3 packets
             client.Call("listen-for-mp3", proto.TrackerRes{""}, nil)
         }
@@ -124,7 +116,6 @@ func main() {
         atomic.AddInt64(&doneResponses, 1)
         log.Println("Done response from a client!")
         if clientsPlaying == 0 { // on the last done-playing, we reset the currSong
-            //log.Println("Start to play the next song")
             songQueue = append(songQueue[:0], songQueue[1:]...)
             currSong = ""
             doneResponses = 0
