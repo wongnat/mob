@@ -163,10 +163,10 @@ func getSongList() ([]string) {
         songs = append(songs, peerMap[keys[i]]...)
     }
 
-    encountered := map[int]bool{}
-    result := []int{}
+    encountered := map[string]bool{}
+    result := []string{}
 
-    for i := range songs {
+    for i, _ := range songs {
         if !encountered[songs[i]] {
             encountered[songs[i]] = true
             result = append(result, songs[i])
