@@ -48,7 +48,7 @@ var seedees []string
 var currentSong string
 var peerToSeedees map[string]net.Conn
 var maxSeedees int
-
+var mux sync.Mutex
 //var originSeeder string
 
 // Assume mp3 is no larger than 50MB. We reuse this buffer for each song we play.
@@ -193,9 +193,10 @@ func handleJoin(input string) {
         for time.Now().Before(args.TimeToPlay) {} // block until ready
         m.Play(1)
         for mix.PlayingMusic() {
-            time.Sleep(5 * time.Millisecond) // block; cpu friendly
+            //time.Sleep(5 * time.Millisecond) // block; cpu friendly
         }
 
+        fmt.Println("Why am I here?!")
         handleDonePlaying()
         return nil
     })
@@ -459,15 +460,21 @@ func listenForPeers() {
                         time.Sleep(500 * time.Microsecond)
                     }
                 }()
+                mux.Lock()
                 peerToConn[ip] = true
+                mux.Unlock()
             } else if isSeeder && len(seedees) >= maxSeedees {
+                mux.Lock()
                 peerToConn[ip] = true
+                mux.Unlock()
             } else {
                 // is a non-seeder; shouldn't get here; sanity check
                 log.Fatal("non-seeder tried to accept other non-seeder")
             }
         case "reject": // where this client is a seeder
+            mux.Lock()
             peerToConn[ip] = true
+            mux.Unlock()
             // remove this peer from our seedees list if they are there
             /*for i, seedee := range seedees {
                 if seedee == ip {
@@ -506,7 +513,14 @@ func seedToPeers(songFile string) {
             go func() {
                 defer wg.Done()
                 defer pc.Close()
-                for !peerToConn[ip] {
+                for {
+                    mux.Lock()
+                    if peerToConn[ip] {
+                        mux.Unlock()
+                        break
+                    }
+                    mux.Unlock()
+
                     pc.Write([]byte("request:" + songFile))
                     time.Sleep(500 * time.Microsecond)
                 }
