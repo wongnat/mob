@@ -543,9 +543,7 @@ func seedToPeers(songFile string) {
 			for j := 0; j < len(frame_bytes); j++ {
 				songBuf[currIndex + j] = frame_bytes[j]
 			}
-			for i := 0; i < n; i++ {
-				songBuf[currIndex + i] = buf[i]
-			}
+		
 			currIndex = currIndex + len(frame_bytes)
 			prebufferedFrames++
 		}
