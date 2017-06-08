@@ -166,7 +166,6 @@ This full list of package commands is:
 ```
 go get -v github.com/veandco/go-sdl2/sdl
 go get -v github.com/veandco/go-sdl2/sdl_mixer
-go get -v github.com/
 go get -v github.com/tcolgate/mp3
 go get -v github.com/cenkalti/rpc2
 ```
@@ -181,7 +180,7 @@ make build
 #### Run the client
 
 Note that you must be in a subdirectory when you run the client as it uses
-the relative path `../songs` to expose it song folder to the tracker.
+the relative path `../songs` to expose its song folder to the tracker.
 
 ```
 cd bin
