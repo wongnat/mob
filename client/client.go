@@ -42,6 +42,7 @@ var isSeeder bool           // tells us if we have access to the mp3 or not
 var alreadySeeding bool     // prevent tracker rpc from being over called
 var alreadyListeningForMp3 bool
 var isSourceSeeder bool
+var seedeeCount int
 
 // Seeder's data structures
 var peerToSeedees map[string]net.Conn
@@ -97,6 +98,7 @@ func main() {
 	alreadySeeding = false
 	alreadyListeningForMp3 = false
 	currentSong = ""
+	seedeeCount = 0
 
 	// Start the shell
 	fmt.Print(
@@ -183,6 +185,20 @@ func handleJoin(input string) {
 		return nil
 	})
 
+	client.Handle("add-seedee", func(client *rpc2.Client, args *proto.TrackerRes, reply *proto.HandshakePacket) error {
+		c, e := net.Dial("udp", net.JoinHostPort(args.Res, "6122"))
+		if e != nil {
+			reply.Type = "error"
+			return nil
+		}
+
+		seedees = append(seedees, args.Res)
+		peerToConn[args.Res] = c
+
+		reply.Type = "ok"
+		return nil
+	})
+
 	client.Handle("start-playing", func(client *rpc2.Client, args *proto.TimePacket, reply *proto.HandshakePacket) error {
 		ptrToBuf := sdl.RWFromMem(unsafe.Pointer(&(songBuf)[0]), cap(songBuf))
 		m, _ = mix.LoadMUS_RW(ptrToBuf, 0)
@@ -205,7 +221,7 @@ func handleJoin(input string) {
 	go handlePing()     // begin continuous communication with tracker
 
 	_, port, _ := net.SplitHostPort(trackerConn.LocalAddr().String())
-	client.Call("join", proto.ClientInfoMsg{net.JoinHostPort(publicIp, port), getSongNames()}, nil)
+	client.Call("join", proto.ClientInfoMsg{net.JoinHostPort(publicIp, port), getSongNames(),}, nil)
 	fmt.Println("Joining tracker " + input)
 }
 
@@ -218,7 +234,7 @@ func handleLeave() {
 		mix.HaltMusic()
 	}
 
-	client.Call("leave", proto.ClientInfoMsg{trackerConn.LocalAddr().String(), nil}, nil)
+	client.Call("leave", proto.ClientInfoMsg{trackerConn.LocalAddr().String(),}, nil)
 	connectedToTracker = false
 
 	fmt.Println("Leaving the tracker in 3 sec ...")
@@ -276,7 +292,7 @@ func handleHelp() {
 func handlePing() {
 	_, port, _ := net.SplitHostPort(trackerConn.LocalAddr().String())
 	for connectedToTracker {
-		client.Call("ping", proto.ClientInfoMsg{net.JoinHostPort(publicIp, port), nil}, nil)
+		client.Call("ping", proto.ClientInfoMsg{net.JoinHostPort(publicIp, port), nil, seedeeCount < maxSeedees}, nil)
 		time.Sleep(10 * time.Millisecond)
 	}
 }
@@ -302,6 +318,7 @@ func handleDonePlaying() {
 	alreadySeeding = false
 	alreadyListeningForMp3 = false
 	currentSong = ""
+	seedeeCount = 0
 
 	// make rpc call to tracker
 	client.Call("done-playing", proto.ClientCmdMsg{""}, nil)
@@ -414,6 +431,7 @@ func listenForPeers() {
 			}
 		case "accept": // where this client is a seeder
 			if isSeeder && len(seedees) < maxSeedees {
+				seedeeCount++
 				ip, _, _ := net.SplitHostPort(addr.String())
 				seedees = append(seedees, ip)
 				go func() {

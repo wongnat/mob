@@ -7,6 +7,7 @@ import (
 	"net"
 	"mob/proto"
 	"sync/atomic"
+	"sync"
 	"github.com/cenkalti/rpc2"
 )
 
@@ -16,6 +17,10 @@ var songQueue []string
 var currSong string
 var clientsPlaying int64
 var doneResponses int64
+
+var waitQueue []string
+
+var mux sync.Mutex
 
 func main() {
 	peerMap   = make(map[string][]string)
@@ -30,6 +35,12 @@ func main() {
 	srv.Handle("join", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
 		peerMap[args.Ip] = args.List
 		fmt.Println("Accepted a new client: " + args.Ip)
+
+		if clientsPlaying != 0 {
+			i, p, _ := net.SplitHostPort(args.Ip)
+			waitQueue = append(waitQueue, i)
+			client.Call("listen-for-mp3", proto.TrackerRes{""}, nil)
+		}
 		return nil
 	})
 
@@ -71,6 +82,19 @@ func main() {
 	// Clients ask tracker when they can start seeding and when they can start
 	// playing the buffered mp3 frames
 	srv.Handle("ping", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
+		if clientsPlaying != 0 {
+			mux.Lock()
+			if len(waitQueue) > 0 && args.CanTakeSeedees {
+				var rep proto.HandshakePacket
+				client.Call("add-seedee", proto.TrackerRes{waitQueue[0]}, &rep)
+				if rep.Type == "ok" {
+					waitQueue = append(waitQueue[:0], waitQueue[1:]...)
+				}
+			}
+
+			mux.Unlock()
+		}
+
 		if doneResponses != 0 {
 			return nil
 		}

@@ -8,6 +8,7 @@ import (
 type ClientInfoMsg struct {
 	Ip string
 	List []string
+	CanTakeSeedees bool
 }
 
 type ClientCmdMsg struct {
