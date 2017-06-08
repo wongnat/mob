@@ -5,6 +5,8 @@ import (
 	"net"
 )
 
+// Structs for our packet types
+
 type ClientInfoMsg struct {
 	Ip string
 	List []string
@@ -34,6 +36,7 @@ type TimePacket struct {
 	TimeToPlay time.Time
 }
 
+// Return our discovered local ip address by pinging google
 func GetLocalIp() (string, error) {
 	conn, err1 := net.Dial("udp", "www.google.com:80")
 	if err1 != nil {

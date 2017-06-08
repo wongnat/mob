@@ -10,12 +10,12 @@ import (
 	"github.com/cenkalti/rpc2"
 )
 
-var peerMap map[string][]string
-var songQueue []string
+var peerMap map[string][]string // map of peer ip addrs to their list of songs
+var songQueue []string          // queue of songs to be played
 
-var currSong string
-var clientsPlaying int64
-var doneResponses int64
+var currSong string      // the current song playing
+var clientsPlaying int64 // number of clients still playing a song
+var doneResponses int64  // number of done playing responses we've received
 
 func main() {
 	peerMap   = make(map[string][]string)
@@ -25,6 +25,8 @@ func main() {
 	doneResponses = 0
 
 	srv := rpc2.NewServer()
+
+	// Register our tracker rpcs
 
 	// join the peer network
 	srv.Handle("join", func(client *rpc2.Client, args *proto.ClientInfoMsg, reply *proto.TrackerRes) error {
@@ -122,7 +124,7 @@ func main() {
 		log.Println(err)
 	}
 
-	ip, ipErr := proto.GetLocalIp()
+	ip, ipErr := proto.GetLocalIp() // discover our local ip address
 	if ipErr != nil {
 		log.Fatal("Error: not connected to the internet.")
 		os.Exit(1)
@@ -135,6 +137,7 @@ func main() {
 	}
 }
 
+// Returns unique global list of songs
 func getSongList() ([]string) {
 	var songs []string
 
