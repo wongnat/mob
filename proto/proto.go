@@ -1,7 +1,7 @@
 package proto
 
 import (
-    //"github.com/sparrc/go-ping"
+    "github.com/sparrc/go-ping"
     "time"
     "net"
 )
@@ -56,16 +56,17 @@ func GetLocalIp() (string, error) {
     return ip, nil
 }
 
-/*
+
 // get RTT in terms of milliseconds between current node and specified IP
-func GetRTTBetweenNodes(address string) int64 {
-    pinger, err := ping.NewPinger(address[0:9])
+func GetRTTBetweenNodes(address string) time.Duration {
+    pinger, err := ping.NewPinger(address)
     if err != nil {
         panic(err)
     }
 
-    pinger.Count = 1
+    pinger.Count = 3
+    pinger.Interval = time.Nanosecond * 100
     pinger.Run()
     stats := pinger.Statistics()
-    return int64(stats.MinRtt / time.Millisecond)
-}*/
+    return stats.MinRtt
+}

@@ -13,6 +13,7 @@ import (
 )
 
 var peerMap map[string][]string
+var peerRTTMap map[string]time.Duration
 var songQueue []string
 
 var currSong string
@@ -82,6 +83,10 @@ func main() {
             currSong = songQueue[0]
         }
 
+        go func () {
+            peerRTTMap[args.Ip] = proto.GetRTTBetweenNodes(args.Ip)
+        }()
+
         // Dispatch call to seeder or call to non-seeder
         if currSong != "" {
             // contact source seeders to start seeding
@@ -106,7 +111,17 @@ func main() {
         // block until everyone is ready
         for clientsPlaying != int64(len(peerMap)) {}
         t := time.Now().Add(5 * time.Second)
-        client.Call("start-playing", proto.TimePacket{t}, nil)
+
+        go func () {
+            wait := time.Now().Add(5 * time.Second)
+
+            wait.Add(-peerRTTMap[args.Arg])
+
+            for time.Now().Before(wait) {} // block until ready
+
+            client.Call("start-playing", proto.TimePacket{t}, nil)
+        }()
+
         return nil
     })
 

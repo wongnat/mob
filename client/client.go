@@ -184,14 +184,14 @@ func handleJoin(input string) {
     })
 
     client.Handle("start-playing", func(client *rpc2.Client, args *proto.TimePacket, reply *proto.HandshakePacket) error {
-        fmt.Println("Before time to play " + time.Now().String())
+        //fmt.Println("Before time to play " + time.Now().String())
         ptrToBuf := sdl.RWFromMem(unsafe.Pointer(&(songBuf)[0]), cap(songBuf))
         m, _ = mix.LoadMUS_RW(ptrToBuf, 0)
 
-        for time.Now().Before(args.TimeToPlay) {} // block until ready
-        fmt.Println("after time to play " + time.Now().String())
+        //for time.Now().Before(args.TimeToPlay) {} // block until ready
+        //fmt.Println("after time to play " + time.Now().String())
         m.Play(1)
-        fmt.Println("after play " + time.Now().String())
+        //fmt.Println("after play " + time.Now().String())
         for mix.PlayingMusic() {
             //time.Sleep(5 * time.Millisecond) // block; cpu friendly
         }
@@ -329,7 +329,7 @@ func listenForMp3() {
     for connectedToTracker { // terminate when we leave a tracker
         if prebufferedFrames == 300 { // pre-buffered 200 frames before playing
             // send rpc to start playing
-            go client.Call("ready-to-play", proto.ClientCmdMsg{""}, nil)
+            go client.Call("ready-to-play", proto.ClientCmdMsg{publicIp}, nil)
         }
 
         buf := make([]byte, 2048)
