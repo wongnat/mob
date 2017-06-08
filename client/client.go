@@ -193,7 +193,7 @@ func handleJoin(input string) {
 		}
 
 		seedees = append(seedees, args.Res)
-		peerToConn[args.Res] = c
+		peerToSeedees[args.Res] = c
 
 		reply.Type = "ok"
 		return nil
@@ -221,7 +221,7 @@ func handleJoin(input string) {
 	go handlePing()     // begin continuous communication with tracker
 
 	_, port, _ := net.SplitHostPort(trackerConn.LocalAddr().String())
-	client.Call("join", proto.ClientInfoMsg{net.JoinHostPort(publicIp, port), getSongNames(),}, nil)
+	client.Call("join", proto.ClientInfoMsg{net.JoinHostPort(publicIp, port), getSongNames(), false}, nil)
 	fmt.Println("Joining tracker " + input)
 }
 
@@ -234,7 +234,7 @@ func handleLeave() {
 		mix.HaltMusic()
 	}
 
-	client.Call("leave", proto.ClientInfoMsg{trackerConn.LocalAddr().String(),}, nil)
+	client.Call("leave", proto.ClientInfoMsg{trackerConn.LocalAddr().String(), nil, false}, nil)
 	connectedToTracker = false
 
 	fmt.Println("Leaving the tracker in 3 sec ...")
