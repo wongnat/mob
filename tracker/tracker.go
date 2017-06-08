@@ -37,7 +37,7 @@ func main() {
 		fmt.Println("Accepted a new client: " + args.Ip)
 
 		if clientsPlaying != 0 {
-			i, p, _ := net.SplitHostPort(args.Ip)
+			i, _, _ := net.SplitHostPort(args.Ip)
 			waitQueue = append(waitQueue, i)
 			client.Call("listen-for-mp3", proto.TrackerRes{""}, nil)
 		}
