@@ -6,6 +6,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl_mixer"
 )
 
+// Load SDL
 func Init() {
 	if err := sdl.Init(sdl.INIT_AUDIO); err != nil {
 		log.Println(err)
@@ -25,6 +26,7 @@ func Init() {
 	}
 }
 
+// Teardown SDL
 func Quit() {
 	mix.CloseAudio()
 	mix.Quit()

@@ -31,9 +31,11 @@ var client *rpc2.Client
 
 // UDP handler for handshake packets
 var packetConn net.PacketConn
+
+// UDP handler for mp3 frames
 var mp3Conn net.PacketConn
 
-// This client's LAN IP address
+// This client's local IP address
 var publicIp string
 
 // Control flags
@@ -44,17 +46,18 @@ var alreadyListeningForMp3 bool
 var isSourceSeeder bool
 
 // Seeder's data structures
-var peerToSeedees map[string]net.Conn
-var peerToConn map[string]bool
-var seedees []string
+var peerToSeedees map[string]net.Conn // map of seedees to their udp conn struct
+var peerToConn map[string]bool // map of seedees to a boolean if they responded to our request or not
+var seedees []string // list of seedees
 
-var currentSong string
+var currentSong string // the current song playing
 
 var maxSeedees int
-var mux sync.Mutex
+var mux sync.Mutex // prevent data races with read/writes to peerToSeedees
 
-// Assume mp3 is no larger than 50MB. We reuse this buffer for each song we play.
+// Assume mp3 is no larger than 20MB. We reuse this buffer for each song we play.
 // Don't need to worry when it gets GCed since we're using it the whole time
+// TODO: figure out by songs < 20MB can still overwite this on only some machines
 var songBuf [20 * 1024 * 1024]byte
 
 func main() {
@@ -144,6 +147,7 @@ func main() {
 	}
 }
 
+// Join a tracker node and register your rpcs that the tracker can call
 func handleJoin(input string) {
 	if connectedToTracker {
 		handleLeave()
@@ -173,6 +177,7 @@ func handleJoin(input string) {
 		return nil
 	})
 
+	// Let tracker notify client to start listening for mp3 frames
 	client.Handle("listen-for-mp3", func(client *rpc2.Client, args *proto.TrackerRes, reply *proto.HandshakePacket) error {
 		if alreadyListeningForMp3 {
 			return nil
@@ -183,12 +188,15 @@ func handleJoin(input string) {
 		return nil
 	})
 
+	// Let tracker notify client to start playing
 	client.Handle("start-playing", func(client *rpc2.Client, args *proto.TimePacket, reply *proto.HandshakePacket) error {
+		// Load song from in-memory buffer so that it can be played by SDL
+		// sort of a hack by casting pointer to golang array to C void *
 		ptrToBuf := sdl.RWFromMem(unsafe.Pointer(&(songBuf)[0]), cap(songBuf))
 		m, _ = mix.LoadMUS_RW(ptrToBuf, 0)
 
 
-		m.Play(1)
+		m.Play(1) // Start playing
 		for mix.PlayingMusic() {
 			time.Sleep(5 * time.Millisecond) // block; cpu friendly
 		}
@@ -209,6 +217,7 @@ func handleJoin(input string) {
 	fmt.Println("Joining tracker " + input)
 }
 
+// Leave the current tracker
 func handleLeave() {
 	if !connectedToTracker {
 		return
@@ -227,6 +236,7 @@ func handleLeave() {
 	fmt.Println("done")
 }
 
+// Get song list from tracker
 func handleListSongs() {
 	if !connectedToTracker {
 		fmt.Println("Error: not connected to a tracker")
@@ -238,6 +248,7 @@ func handleListSongs() {
 	fmt.Println(res.Res)
 }
 
+// Get list of peers from tracker
 func handleListPeers() {
 	if !connectedToTracker {
 		fmt.Println("Error: not connected to a tracker")
@@ -249,7 +260,7 @@ func handleListPeers() {
 	fmt.Println(res.Res)
 }
 
-// need to listen for when to start playing to others
+// Notify the tracker to add the given song to its song queue
 func handlePlay(input string) {
 	if !connectedToTracker {
 		fmt.Println("Error: not connected to a tracker")
@@ -260,6 +271,7 @@ func handlePlay(input string) {
 	fmt.Println("Enqueued " + input)
 }
 
+// Print shell commands
 func handleHelp() {
 	fmt.Print(
 		`commands:
@@ -273,6 +285,9 @@ func handleHelp() {
 `)
 }
 
+// Method of continous communication between clients and tracker
+// Client constantly asking the tracker if the next song is ready.
+// TODO: use this as a method of timing out clients that have poor connectivity
 func handlePing() {
 	_, port, _ := net.SplitHostPort(trackerConn.LocalAddr().String())
 	for connectedToTracker {
@@ -281,6 +296,7 @@ func handlePing() {
 	}
 }
 
+// Notify the client that we finished playing the song
 func handleDonePlaying() {
 	m.Free()
 	m = nil
@@ -482,7 +498,7 @@ func seedToPeers(songFile string) {
 		}
 	}
 
-	wg.Wait()
+	wg.Wait() // wait until we get a response from every peer
 
 
 	// Dial seedees mp3 port
@@ -527,7 +543,7 @@ func seedToPeers(songFile string) {
 			for j := 0; j < len(frame_bytes); j++ {
 				songBuf[currIndex + j] = frame_bytes[j]
 			}
-
+		
 			currIndex = currIndex + len(frame_bytes)
 			prebufferedFrames++
 		}
